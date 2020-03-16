@@ -175,9 +175,21 @@ router igvrouter:
 
 const insert_js = """
 <script type="text/javascript">
+var browser
 function jigv() {
     let div = document.getElementById("jigv");
-    let browser = igv.createBrowser(div, <OPTIONS>)
+    let options = <OPTIONS>
+    if(location.hash.substr(1)) {
+      options.locus = location.hash.substr(1)
+    } else {
+      location.hash = options.locus
+    }
+    browser = igv.createBrowser(div, options).then(function(browser) {
+       browser.on('locuschange', function (referenceFrame) {
+            location.hash = referenceFrame.label
+       });
+    })
+
 }
 
 </script>
