@@ -187,7 +187,7 @@ const templ = staticRead("jigv-template.html")
 
 proc main() =
 
-  let p = newParser("igv-server"):
+  let p = newParser("jigv"):
     option("-r", "--region", help="optional region to start at", default="chr1")
     flag("-o", "--open-browser", help="open browser")
     option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
