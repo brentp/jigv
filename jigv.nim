@@ -2,6 +2,8 @@ import os
 import argparse
 import strformat
 import jester
+#import regex
+import re
 import hts
 import httpcore
 import hts/files
@@ -46,19 +48,19 @@ proc format(T:Track): string =
 proc url(t:Track): string =
   result = &"/data/tracks/{extractFileName(t.path)}"
 
-proc indexUrl(t:Track): string =
-  result = t.url
+proc ext*(t:Track): string =
   case t.file_type
-    of FileType.CRAM:
-      result &= ".crai"
-    of FileType.BAM:
-      result &= ".bai"
-    of FileType.VCF:
-      result &= ".tbi"
+  of FileType.CRAM:
+    result = ".crai"
+  of FileType.BAM:
+    result = ".bai"
+  of FileType.VCF:
+    result = ".tbi"
+  else:
+    raise newException(ValueError, "unsupported file type:" & $t.file_type)
 
-    else:
-      raise newException(ValueError, "unsupported file type:" & $t.file_type)
-
+proc indexUrl(t:Track): string =
+  result = t.url & t.ext
 
 proc `$`*(T:Track): string =
   result = &"""{{
@@ -71,6 +73,9 @@ proc `$`*(T:Track): string =
     result &= """
    showSoftClips: true,
    viewAsPairs: true,"""
+  elif T.file_type == FileType.VCF:
+    result &= """
+    visibilityWindow: 200000,"""
   result &= "\n}"
 
 
@@ -80,7 +85,8 @@ proc `%`*(T:Track): JsonNode =
   fields["type"] = % T.get_type
   fields["format"] = % T.format
   fields["url"] = % T.url
-  fields["indexUrl"] = % T.indexUrl
+  fields["indexURL"] = % T.indexUrl
+  fields["name"] = % T.name
   if T.height != 0:
     fields["height"] = % T.height
   if T.file_type in  {FileType.CRAM, FILE_TYPE.BAM}:
@@ -89,6 +95,7 @@ proc `%`*(T:Track): JsonNode =
   return JsonNode(kind: JObject, fields: fields)
 
 router igvrouter:
+
 
   get "/data/tracks/@name":
     let name = extractFileName(@"name")
@@ -103,18 +110,23 @@ router igvrouter:
       # requesting index or other full file
       for tr in tracks:
         if name == extractFileName(tr.indexUrl):
-          echo &"################# {name} indxurl: {tr.indexUrl}"
-          let data = tr.indexUrl.readFile
+          file_path = tr.path & tr.ext
+          let data = file_path.readFile
           let headers = [(key:"Content-Type", value:"application/octet-stream")]
           resp(Http200, headers, data)
-
-
+          return
+    elif file_path != "" and "Range" notin request.headers.table and "range" notin request.headers.table:
+      stderr.write_line "slurping file:", file_path
+      let data = file_path.readFile
+      let headers = [(key:"Content-Type", value:"application/octet-stream")]
+      resp(Http200, headers, data)
+      return
 
 
     let r = request.headers["Range"]
     let byte_range = r.split("=")[1].split("-")
     let offset = parseInt(byte_range[0])
-    let length = parseInt(byte_range[1])
+    let length = parseInt(byte_range[1]) - offset
 
     var fh:File
     if not open(fh, file_path):
@@ -125,11 +137,15 @@ router igvrouter:
     # not sure why we need + 1 here...
     var data = newString(length+1)
     data[data.high] = 0.char
-    doAssert length == fh.readBuffer(data[0].addr.pointer, length)
+    let got = fh.readBuffer(data[0].addr.pointer, length)
+    doAssert got == length, $(length, got)
 
     let range_str = &"bytes {offset}-{offset + length}/{size}"
     let headers = [(key:"Content-Type", value:"application/octet-stream"), (key:"Content-Range", value: range_str)]
     resp(Http206, headers, data)
+
+  get re"/reference/(.+)/":
+    echo "REFERENCE"
 
   get "/":
     #echo "resuting index"
@@ -152,7 +168,8 @@ proc main() =
 
   let p = newParser("igv-server"):
     option("-r", "--region", help="optional region to start at")
-    option("-b", "--genome-build", default="hg38")
+    option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
+    option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and need to decode CRAM")
     option("-p", "--port", default="5001")
     # TODO: regions files
     arg("files", help="bam/cram/vcf file(s) (with indexes)", nargs= -1)
@@ -173,9 +190,14 @@ proc main() =
 
   let options = %* {
       "genome": args.genome_build,
+      "locus": "chr1:1285401",
       "showCursorTrackingGuide": true,
-      "tracks": tracks
-      }
+      "tracks": tracks,
+    }
+  if args.fasta != "":
+    var rp = &"/reference/{args.fasta}"
+    var rpi = &"/reference/{args.fasta}.fai"
+    options["reference"] = %* {"fastaURL": rp, "indexURL": rpi}
 
   index_html = tmpl.replace("</head>", insert_js.replace("<OPTIONS>", $options) & "</head>")
   index_html = index_html.replace("</body>", """</body><script type="text/javascript">jigv()</script>""")
