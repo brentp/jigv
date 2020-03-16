@@ -2,6 +2,8 @@ import os
 import argparse
 import strformat
 import jester
+import browsers
+
 #import regex
 import re
 import hts
@@ -78,6 +80,30 @@ proc `$`*(T:Track): string =
     visibilityWindow: 200000,"""
   result &= "\n}"
 
+proc read_range(file_path:string, range_req:string): (seq[tuple[key: string, value: string]], string) =
+
+    let r = range_req
+    let byte_range = r.split("=")[1].split("-")
+    let offset = parseInt(byte_range[0])
+    let length = parseInt(byte_range[1]) - offset
+
+    var fh:File
+    if not open(fh, file_path):
+       quit "couldnt open file:" & file_path
+    let size = getFileSize(fh)
+
+    fh.setFilePos(offset)
+    # not sure why we need + 1 here...
+    var data = newString(length+1)
+    data[data.high] = 0.char
+    let got = fh.readBuffer(data[0].addr.pointer, length)
+    doAssert got == length, $(length, got)
+
+    let range_str = &"bytes {offset}-{offset + length}/{size}"
+    let headers = @[(key:"Content-Type", value:"application/octet-stream"), (key:"Content-Range", value: range_str)]
+    fh.close
+
+    return (headers, data)
 
 proc `%`*(T:Track): JsonNode =
 
@@ -124,32 +150,27 @@ router igvrouter:
 
 
     let r = request.headers["Range"]
-    let byte_range = r.split("=")[1].split("-")
-    let offset = parseInt(byte_range[0])
-    let length = parseInt(byte_range[1]) - offset
 
-    var fh:File
-    if not open(fh, file_path):
-       quit "couldnt open file:" & file_path
-    let size = getFileSize(fh)
-
-    fh.setFilePos(offset)
-    # not sure why we need + 1 here...
-    var data = newString(length+1)
-    data[data.high] = 0.char
-    let got = fh.readBuffer(data[0].addr.pointer, length)
-    doAssert got == length, $(length, got)
-
-    let range_str = &"bytes {offset}-{offset + length}/{size}"
-    let headers = [(key:"Content-Type", value:"application/octet-stream"), (key:"Content-Range", value: range_str)]
+    var (headers, data) = file_path.read_range(r)
     resp(Http206, headers, data)
 
-  get re"/reference/(.+)/":
-    echo "REFERENCE"
+  get re"/reference/(.+)":
+    var path = request.matches[0]
+    if path.endsWith(".fai"):
+      let data = path.readFile
+      let headers = [(key:"Content-Type", value:"application/octet-stream")]
+      resp(Http200, headers, data)
+      return
+
+    if "range" notin request.headers.table and "Range" notin request.headers.table:
+      quit "can't handle reference request without range"
+
+    let r = request.headers["Range"]
+    var (headers, data) = path.read_range(r)
+    resp(Http206, headers, data)
+
 
   get "/":
-    #echo "resuting index"
-    #resp.headers["Content-Type"] = "text/html"
     resp index_html
 
 const insert_js = """
@@ -167,7 +188,8 @@ const templ = staticRead("jigv-template.html")
 proc main() =
 
   let p = newParser("igv-server"):
-    option("-r", "--region", help="optional region to start at")
+    option("-r", "--region", help="optional region to start at", default="chr1")
+    flag("-o", "--open-browser", help="open browser")
     option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
     option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and need to decode CRAM")
     option("-p", "--port", default="5001")
@@ -190,7 +212,6 @@ proc main() =
 
   let options = %* {
       "genome": args.genome_build,
-      "locus": "chr1:1285401",
       "showCursorTrackingGuide": true,
       "tracks": tracks,
     }
@@ -198,12 +219,16 @@ proc main() =
     var rp = &"/reference/{args.fasta}"
     var rpi = &"/reference/{args.fasta}.fai"
     options["reference"] = %* {"fastaURL": rp, "indexURL": rpi}
+  if args.region != "":
+    options["locus"] = % args.region
 
-  index_html = tmpl.replace("</head>", insert_js.replace("<OPTIONS>", $options) & "</head>")
+  index_html = tmpl.replace("</head>", insert_js.replace("<OPTIONS>", pretty(options)) & "</head>")
   index_html = index_html.replace("</body>", """</body><script type="text/javascript">jigv()</script>""")
 
   let settings = newSettings(port=parseInt(args.port).Port)
   var jester = initJester(igvrouter, settings)
+  if args.open_browser:
+    openDefaultBrowser(&"http://localhost:{args.port}/")
   jester.serve()
 
 when isMainModule:
