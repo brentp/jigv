@@ -44,7 +44,7 @@ proc format(T:Track): string =
     raise newException(ValueError, "unknown format for " & $T.file_type)
 
 proc url(t:Track): string =
-  result = &"static/tracks/{extractFileName(t.path)}"
+  result = &"/data/tracks/{extractFileName(t.path)}"
 
 proc indexUrl(t:Track): string =
   result = t.url
@@ -90,13 +90,26 @@ proc `%`*(T:Track): JsonNode =
 
 router igvrouter:
 
-  get "/data/@name":
+  get "/data/tracks/@name":
     let name = extractFileName(@"name")
-    #stderr.write_line "name:", name
     var file_path: string
     for tr in tracks:
       if name == extractFileName(tr.path):
         file_path = tr.path
+
+    if file_path == "" and "Range" in request.headers.table:
+      resp(Http404)
+    elif file_path == "":
+      # requesting index or other full file
+      for tr in tracks:
+        if name == extractFileName(tr.indexUrl):
+          echo &"################# {name} indxurl: {tr.indexUrl}"
+          let data = tr.indexUrl.readFile
+          let headers = [(key:"Content-Type", value:"application/octet-stream")]
+          resp(Http200, headers, data)
+
+
+
 
     let r = request.headers["Range"]
     let byte_range = r.split("=")[1].split("-")
