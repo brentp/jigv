@@ -1,7 +1,8 @@
 # jigv
 
 [igv.js](https://github.com/igvteam/igv.js) is a great way to view aligments and other genomic data files. 
-It requires that the files are hosted on a server, such as apache or nginx.
+It requires that the files are hosted on a server, like apache or nginx. It also requires writing html and
+javascript.
 
 In a single binary, `jigv` provides a server
 and some default configuration, javascript and HTML so you can do:
@@ -61,8 +62,8 @@ Options:
 + not all file types are supported
 
 # to-do
-+ need a way to automate taking images of a set of regions
-+ given a VCF or bed, need a way to iterate through the rows (e.g. ctrl+f in desktop igv)
++ need a way to automate taking images of a set of regions [#2](https://github.com/brentp/jigv/issues/2)
++ given a VCF or bed, need a way to iterate through the rows (e.g. ctrl+f in desktop igv) [#1](https://github.com/brentp/jigv/issues/1)
 
 # examples
 
