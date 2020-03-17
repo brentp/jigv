@@ -8,6 +8,10 @@ jigv --open-browser --region chr1:34566-34999 *.bam *.cram *.vcf.gz
 ```
 With that, a server will start and a browser will open an igv.js viewer for your requested files.
 
+# installation
+
+grab a static linux binary from [releases](https://github.com/brentp/jigv/releases/latest)
+
 # options
 
 ```
@@ -29,5 +33,6 @@ Options:
 
 # notes
 
-+ this is likely insecure in many ways
++ this is likely insecure in many ways.
 + there will soon be a way to customize the options and javascript (but this probably covers 85% of use-cases as-is).
++ if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
