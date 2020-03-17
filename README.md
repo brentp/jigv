@@ -12,7 +12,7 @@ Usage:
   jigv [options] [files ...]
 
 Arguments:
-  [files ...]      bam/cram/vcf file(s) (with indexes)
+  [files ...]      bam/cram/vcf/bed{,.gz} file(s) (with indexes)
 
 Options:
   -r, --region=REGION        optional region to start at (default: chr1)

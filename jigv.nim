@@ -29,6 +29,8 @@ proc get_type(T:Track): string =
   else:
     if T.path.endsWith(".bed") or T.path.endsWith(".bed.gz") or T.path.endsWith(".bedgraph"):
       return "annotation"
+    if T.path.endsWith(".bw") or T.path.endsWith(".wig") or T.path.toLowerAscii.endswith(".bigwig"):
+      return "wig"
     raise newException(ValueError, "unknown file type for " & $T.file_type)
 
 proc height(T:Track): int =
@@ -49,6 +51,8 @@ proc format(T:Track): string =
   else:
     if T.path.endsWith(".bed") or T.path.endsWith(".bed.gz") or T.path.endsWith(".bedgraph"):
       return "bed"
+    if T.path.endsWith(".bw") or T.path.endsWith(".wig") or T.path.toLowerAscii.endswith(".bigwig"):
+      return "wig"
     raise newException(ValueError, "unknown format for " & $T.file_type)
 
 proc url(t:Track): string =
@@ -105,10 +109,10 @@ proc read_range(file_path:string, range_req:string): (seq[tuple[key: string, val
 
     fh.setFilePos(offset)
     # not sure why we need + 1 here...
-    var data = newString(length+1)
+    var data = newString(min(size, length)+1)
     data[data.high] = 0.char
     let got = fh.readBuffer(data[0].addr.pointer, length)
-    doAssert got == length, $(length, got)
+    doAssert got == data.high, $(got, length, "size:" & $size)
 
     let range_str = &"bytes {offset}-{offset + length}/{size}"
     let headers = @[(key:"Content-Type", value:"application/octet-stream"), (key:"Content-Range", value: range_str)]
@@ -120,12 +124,16 @@ proc `%`*(T:Track): JsonNode =
 
   var fields = initOrderedTable[string, JsonNode](4)
   fields["type"] = % T.get_type
-  fields["format"] = % T.format
+  if T.format != "wig":
+    fields["format"] = % T.format
   fields["url"] = % T.url
   try:
     fields["indexURL"] = % T.indexUrl
   except ValueError:
     discard
+
+  if fields["type"] == % "annotation":
+    fields["displayMode"] = % "SQUISHED"
   fields["name"] = % T.name
   if T.height != 0:
     fields["height"] = % T.height
@@ -220,7 +228,7 @@ proc main() =
     option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and need to decode CRAM")
     option("-p", "--port", default="5001")
     # TODO: regions files
-    arg("files", help="bam/cram/vcf file(s) (with indexes)", nargs= -1)
+    arg("files", help="bam/cram/vcf/bed file(s) (with indexes)", nargs= -1)
 
   var args = p.parse()
   if args.help:
