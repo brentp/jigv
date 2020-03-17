@@ -1,6 +1,6 @@
 # jigv
 
-[igv.js](https://github.com/igvteam/igv.js) is a great way to view aligments an other files. This provides a server
+[igv.js](https://github.com/igvteam/igv.js) is a great way to view aligments and other genomic data files. This provides a server
 and some default configuration, javascript and HTML so you can do:
 
 ```
