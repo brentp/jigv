@@ -1,9 +1,9 @@
-[igv.js](https://github.com/igvteam/igv.js) is a great way to view aligments and other genomic data files. 
-It requires that the files are hosted on a server, like apache or nginx. It also requires writing html and
+[igv.js](https://github.com/igvteam/igv.js) is a great way to view aligments and other genomic data. 
+It requires that the files are hosted on a server, like apache or nginx and it requires writing html and
 javascript.
 
-In a single binary, `jigv` provides a server
-and some default configuration, javascript and HTML so you can do:
+In a single binary, `jigv` provides a server and some default configuration,
+javascript, and HTML so you can do:
 
 ```
 jigv --open-browser --region chr1:34566-34999 *.bam /path/to/some.cram my.vcf.gz
@@ -11,6 +11,9 @@ jigv --open-browser --region chr1:34566-34999 *.bam /path/to/some.cram my.vcf.gz
 With that, a server will start and a browser will open an igv.js viewer for your requested files, 
 similiar to how you'd do with the java version of IGV. Without the `--open-browser` option, you can
 go to *http://$server:5001/* (where `$server` is often `localhost`).
+
+
+User Quote: ["got it working under 1 minute instead of fiddling with igv.js...!"](https://twitter.com/wendyWongSW/status/1239935250559569922)
 
 # notes
 
