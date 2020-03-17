@@ -11,7 +11,8 @@ and some default configuration, javascript and HTML so you can do:
 jigv --open-browser --region chr1:34566-34999 *.bam *.cram *.vcf.gz
 ```
 With that, a server will start and a browser will open an igv.js viewer for your requested files, 
-similiar to how you'd do with the java version of IGV
+similiar to how you'd do with the java version of IGV. Without the `--open-browser` option, you can
+go to *http://$server:5001/*.
 
 # notes
 
@@ -26,7 +27,7 @@ connect with ssh tunneling:
 server: jigv "/path/to/kid.bam#proband" "/path/to/mom.bam#mom" "/path/to/dad.bam#dad" "/path/to/joint.vcf.gz"
 
 # set up the tunnel on local machine (replace $server with the hostname you would normally ssh)
-local:ssh -N -L localhost:5001:localhost:5001 $server
+local: ssh -N -L localhost:5001:localhost:5001 $server
 ```
 
 Then browse localhost:5001 on your local machine.
