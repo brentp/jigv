@@ -20,6 +20,20 @@ type Track* = object
 var tracks*: seq[Track]
 var index_html: string
 
+proc file_type_ez(path:string): FileType =
+  if path.startswith("http"):
+    if path.endswith(".bam"):
+      return FileType.BAM
+    elif path.endswith(".cram"):
+      return FileType.CRAM
+    elif path.endswith(".vcf") or path.endswith(".vcf.gz"):
+      return FileType.VCF
+
+    return FileType.UNKNOWN
+
+  else:
+    return path.file_type
+
 proc get_type(T:Track): string =
   if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
     return "alignment"
@@ -260,7 +274,7 @@ proc main() =
     if fs.len == 2:
       tr.path = fs[0]
       tr.name = fs[1]
-    tr.file_type = tr.path.file_type
+    tr.file_type = tr.path.file_type_ez
     tracks.add(tr)
 
   var tmpl = templ
@@ -274,6 +288,7 @@ proc main() =
       "genome": args.genome_build,
       "showCursorTrackingGuide": true,
       "tracks": tracks,
+      "queryParametersSupported": true,
     }
   if args.fasta != "":
     var rp = &"/reference/{args.fasta}"
