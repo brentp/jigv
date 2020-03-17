@@ -1,9 +1,12 @@
 # jigv
 
+[igv.js](https://github.com/igvteam/igv.js) is a great way to view aligments an other files. This provides a server
+and some default configuration, javascript and HTML so you can do:
+
 ```
-jigv *.bam *.cram *.vcf.gz
+jigv --open-browser --region chr1:34566-34999 *.bam *.cram *.vcf.gz
 ```
-then go to localhost:5001 and see your files in [igv.js](https://github.com/igvteam/igv.js)
+With that, a server will start and a browser will open an igv.js viewer for your requested files.
 
 # options
 
@@ -24,3 +27,7 @@ Options:
   -h, --help                 Show this help
 ```
 
+# notes
+
++ this is likely insecure in many ways
++ there will soon be a way to customize the options and javascript (but this probably covers 85% of use-cases as-is).
