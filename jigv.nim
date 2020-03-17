@@ -22,29 +22,33 @@ var index_html: string
 
 proc get_type(T:Track): string =
   case T.file_type
-  of FileType.CRAM, FILE_TYPE.BAM:
+  of FileType.CRAM, FileType.BAM:
     return "alignment"
-  of FileType.VCF, FILE_TYPE.BCF:
+  of FileType.VCF, FileType.BCF:
     return "variant"
   else:
+    if T.path.endsWith(".bed") or T.path.endsWith(".bed.gz") or T.path.endsWith(".bedgraph"):
+      return "annotation"
     raise newException(ValueError, "unknown file type for " & $T.file_type)
 
 proc height(T:Track): int =
   case T.file_type
-  of FileType.CRAM, FILE_TYPE.BAM:
+  of FileType.CRAM, FileType.BAM:
     return 220
-  of FileType.VCF, FILE_TYPE.BCF:
-    return 80
+  of FileType.VCF, FileType.BCF:
+    return 60
   else:
-    raise newException(ValueError, "unknown format for " & $T.file_type)
+    return 50
 
 proc format(T:Track): string =
   case T.file_type
-  of FileType.CRAM, FILE_TYPE.BAM:
+  of FileType.CRAM, FileType.BAM:
     return ($T.file_type).toLowerAscii
-  of FileType.VCF, FILE_TYPE.BCF:
+  of FileType.VCF, FileType.BCF:
     return "vcf"
   else:
+    if T.path.endsWith(".bed") or T.path.endsWith(".bed.gz") or T.path.endsWith(".bedgraph"):
+      return "bed"
     raise newException(ValueError, "unknown format for " & $T.file_type)
 
 proc url(t:Track): string =
@@ -59,6 +63,8 @@ proc ext*(t:Track): string =
   of FileType.VCF:
     result = ".tbi"
   else:
+    if t.path.endsWith(".bed.gz"):
+      return ".tbi"
     raise newException(ValueError, "unsupported file type:" & $t.file_type)
 
 proc indexUrl(t:Track): string =
@@ -67,11 +73,16 @@ proc indexUrl(t:Track): string =
 proc `$`*(T:Track): string =
   result = &"""{{
   type: "{T.get_type}", format: "{T.format}",
-  url: "{T.url}",
+  url: "{T.url}","""
+  try:
+    result &= """
   indexURL: "{T.indexUrl}","""
+  except ValueError:
+    discard
+
   if T.height != 0:
     result &= &"\n  \"height\": {T.height},"
-  if T.file_type in  {FileType.CRAM, FILE_TYPE.BAM}:
+  if T.file_type in  {FileType.CRAM, FileType.BAM}:
     result &= """
    showSoftClips: true,
    viewAsPairs: true,"""
@@ -111,11 +122,14 @@ proc `%`*(T:Track): JsonNode =
   fields["type"] = % T.get_type
   fields["format"] = % T.format
   fields["url"] = % T.url
-  fields["indexURL"] = % T.indexUrl
+  try:
+    fields["indexURL"] = % T.indexUrl
+  except ValueError:
+    discard
   fields["name"] = % T.name
   if T.height != 0:
     fields["height"] = % T.height
-  if T.file_type in  {FileType.CRAM, FILE_TYPE.BAM}:
+  if T.file_type in  {FileType.CRAM, FileType.BAM}:
     fields["showSoftClips"] = % true
     fields["viewAsPairs"] = % true
   return JsonNode(kind: JObject, fields: fields)
