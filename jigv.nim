@@ -225,7 +225,7 @@ proc main() =
     option("-r", "--region", help="optional region to start at", default="chr1")
     flag("-o", "--open-browser", help="open browser")
     option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
-    option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and need to decode CRAM")
+    option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and needed to decode CRAM")
     option("-p", "--port", default="5001")
     # TODO: regions files
     arg("files", help="bam/cram/vcf/bed file(s) (with indexes)", nargs= -1)
