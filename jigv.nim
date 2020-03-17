@@ -21,6 +21,8 @@ var tracks*: seq[Track]
 var index_html: string
 
 proc get_type(T:Track): string =
+  if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
+    return "alignment"
   case T.file_type
   of FileType.CRAM, FileType.BAM:
     return "alignment"
@@ -34,6 +36,8 @@ proc get_type(T:Track): string =
     raise newException(ValueError, "unknown file type for " & $T.file_type)
 
 proc height(T:Track): int =
+  if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
+    return 220
   case T.file_type
   of FileType.CRAM, FileType.BAM:
     return 220
@@ -43,6 +47,10 @@ proc height(T:Track): int =
     return 50
 
 proc format(T:Track): string =
+  if T.path.endsWith(".cram"):
+    return "cram"
+  if T.path.endsWith(".bam"):
+    return "bam"
   case T.file_type
   of FileType.CRAM, FileType.BAM:
     return ($T.file_type).toLowerAscii
@@ -56,9 +64,17 @@ proc format(T:Track): string =
     raise newException(ValueError, "unknown format for " & $T.file_type)
 
 proc url(t:Track): string =
+  if t.path.startswith("http") or t.path.startswith("ftp"):
+    return t.path
   result = &"/data/tracks/{extractFileName(t.path)}"
 
-proc ext*(t:Track): string =
+proc index_ext*(t:Track): string =
+  if t.path.startswith("http") or t.path.startswith("ftp"):
+    case splitFile(t.path).ext
+    of ".bam": return ".bai"
+    of ".cram": return ".crai"
+    of ".vcf.gz", "bed.gz": return ".tbi"
+
   case t.file_type
   of FileType.CRAM:
     result = ".crai"
@@ -72,7 +88,7 @@ proc ext*(t:Track): string =
     raise newException(ValueError, "unsupported file type:" & $t.file_type)
 
 proc indexUrl(t:Track): string =
-  result = t.url & t.ext
+  result = t.url & t.index_ext
 
 proc `$`*(T:Track): string =
   result = &"""{{
@@ -158,7 +174,7 @@ router igvrouter:
       # requesting index or other full file
       for tr in tracks:
         if name == extractFileName(tr.indexUrl):
-          file_path = tr.path & tr.ext
+          file_path = tr.path & tr.index_ext
           let data = file_path.readFile
           let headers = [(key:"Content-Type", value:"application/octet-stream")]
           resp(Http200, headers, data)
@@ -235,7 +251,13 @@ proc main() =
     quit(0)
 
   for f in args.files:
-      tracks.add(Track(path:f, file_type: f.file_type, name: extractFileName(f)))
+    var fs = f.split("#")
+    var tr = Track(name: extractFileName(f), path: f)
+    if fs.len == 2:
+      tr.path = fs[0]
+      tr.name = fs[1]
+    tr.file_type = tr.path.file_type
+    tracks.add(tr)
 
   var tmpl = templ
   if getEnv("JIGV_TEMPLATE") != "":

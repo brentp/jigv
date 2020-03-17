@@ -12,6 +12,24 @@ jigv --open-browser --region chr1:34566-34999 *.bam *.cram *.vcf.gz
 With that, a server will start and a browser will open an igv.js viewer for your requested files, 
 similiar to how you'd do with the java version of IGV
 
+# notes
+
+by default a file like "/path/to/some.bam" will have a name of "some.bam" to change that send "/path/to/some.bam#label"
+where anything after the `#` is used as the label.
+
+This can be very useful on a `server`. In a screen start jigv with the desired files. Then from your remote machine
+connect with ssh tunneling:
+
+```
+# in a screen/tmux session
+server: jigv "/path/to/kid.bam#proband" "/path/to/mom.bam#mom" "/path/to/dad.bam#dad" "/path/to/joint.vcf.gz"
+
+# set up the tunnel on local machine (replace $server with the hostname you would normally ssh)
+local:ssh -N -L localhost:5001:localhost:5001 $server
+```
+
+Then browse localhost:5001 on your local machine.
+
 # installation
 
 grab a static linux binary from [releases](https://github.com/brentp/jigv/releases/latest)
@@ -35,9 +53,25 @@ Options:
   -h, --help                 Show this help
 ```
 
-# notes
+# limitations
 
 + this is likely insecure in many ways.
 + there will soon be a way to customize the options and javascript (but this probably covers 85% of use-cases as-is).
 + if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
 + not all file types are supported
+
+# to-do
++ need a way to automate taking images of a set of regions
++ given a VCF or bed, need a way to iterate through the rows (e.g. ctrl+f in desktop igv)
+
+# examples
+
+while this is most helpful when you don't already have a server, you can use it to quickly view files
+that are public:
+```
+jigv -g hg19 \
+    -r "chr5:1,278,267-1,281,011" \
+    -o "https://s3.amazonaws.com/1000genomes/phase3/data/HG00096/exome_alignment/HG00096.mapped.ILLUMINA.bwa.GBR.exome.20120522.bam#kid" \
+        "https://s3.amazonaws.com/1000genomes/phase3/data/NA18637/exome_alignment/NA18637.mapped.ILLUMINA.bwa.CHB.exome.20121211.bam#mom"
+```
+
