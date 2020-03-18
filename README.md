@@ -15,10 +15,19 @@ go to *http://$server:5001/* (where `$server` is often `localhost`).
 
 User Quote: ["got it working under 1 minute instead of fiddling with igv.js...!"](https://twitter.com/wendyWongSW/status/1239935250559569922)
 
-# notes
+# notes and features
+
+#### navigation
+
+`jigv` supports navigation along variants in a VCF file using the left and right arrow keys. it uses the first VCF track
+as the one to navigate through.
+
+#### labels 
 
 by default a file like `/path/to/some.bam` will have a name of `some.bam` to change that send `"/path/to/some.bam#label"`
 where anything after the `#` is used as the label.
+
+#### remote servers 
 
 This can be very useful on a `server` even if it's not open for browsing non-standard ports: in a screen start jigv with the desired files. 
 Then from your remote machine connect with ssh tunneling:

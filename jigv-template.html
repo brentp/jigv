@@ -34,6 +34,8 @@ jQuery(document).on("keydown", function(e) {
         return
     }
     cache.push(browser.$searchInput.val())
+    // if cache gets too long, we drop the first elements.
+    if(cache.length > 500) { cache.splice(0, 400) }
 
     e.stopPropagation();
     jQuery.getJSON("/nextfeature/", {locus: browser.$searchInput.val()}, function(resp) {
@@ -47,6 +49,7 @@ jQuery(document).on("keydown", function(e) {
 })
 </script>
 
+<div id="message">press left or right arrow keys to navigate through VCF records"</div>
 
 </body>
 </html>
