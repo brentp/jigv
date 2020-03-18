@@ -176,7 +176,96 @@ proc `%`*(T:Track): JsonNode =
     fields["viewAsPairs"] = % true
   return JsonNode(kind: JObject, fields: fields)
 
+type region = tuple[chrom:string, start:int, stop:int]
+
+
+template stripChr*[T:string|cstring](s:T): string =
+  if s.len > 3 and ($s).startswith("chr"): ($s)[3..<s.len] else: $s
+
+proc findNextFeature(ivcf:VCF, chrom:string, left:int, right:int, rep:int): region =
+  var contig_i = 0
+  for i, c in ivcf.contigs:
+
+    if stripChr(c.name) == stripChr(chrom):
+      result.chrom = c.name
+      contig_i = i
+      break
+
+  if result.chrom == "":
+    stderr.write_line &"[jigv] chrom not found {chrom}"
+    return
+
+  var center = int(0.5 + (left + right) / 2)
+
+  for v in ivcf.query(&"{result.chrom}:{left}"):
+    if v.start < center + 1: continue
+
+    var desired_range = right - left
+    if v.stop - v.start < 20:
+      var vmid = int(0.5 + int(v.start + v.stop) / 2)
+
+      var delta = int(0.5 + float(desired_range - int(v.stop - v.start)) * 0.5)
+
+      return (chrom, vmid - delta, vmid + delta)
+
+
+    else:
+      var offset = 50
+      if v.start.int - offset <= left: continue
+      # then show left end.
+      return (chrom, v.start.int - offset, v.start.int - offset + desired_range)
+
+
+  var contigs = ivcf.contigs
+  if contig_i == contigs.high: contig_i = 0 else: contig_i.inc
+
+  # after incrementing to next chrom, we can continue trying.
+  # `rep` avoids infinite loop
+  if rep < contigs.len:
+    return ivcf.findNextFeature(contigs[contig_i].name, 0, 0, rep+1)
+
+proc findNextFeature(path:string, chrom:string, left:int, right:int): region =
+  var ivcf:VCF
+  if not ivcf.open(path):
+    stderr.write_line &"[jigv] requested path {path} not found"
+
+  defer: ivcf.close
+
+  return ivcf.findNextFeature(chrom, left, right, 0)
+
 router igvrouter:
+
+  get "/nextfeature/":
+    # user clicked right in browser. this finds next feature
+    # in first track that's BED or VCF
+    var locus = request.params["locus"].replace(",", "").split(":")
+    var chrom = locus[0]
+    var left = 0
+    var right = 100
+    if locus.len > 1:
+      var se = locus[1].split("-")
+      left = parseInt(se[0])
+      if se.len > 1:
+        right = parseInt(se[1])
+    var loc: region
+    for tr in tracks:
+      if not tr.path.endsWith(".vcf.gz"): continue
+      loc = tr.path.findNextFeature(chrom, left, right)
+      break
+
+    let headers = [(key:"Content-Type", value:"application/json")]
+    if loc.chrom == "":
+      var data = %* {
+           "success": false
+      }
+      resp(Http200, headers, $data)
+      return
+
+    let data = %* {
+      "success": true,
+      "position": &"{loc.chrom}:{loc.start}-{loc.stop}",
+    }
+    resp(Http200, headers, $data)
 
 
   get "/data/tracks/@name":
@@ -240,8 +329,9 @@ function jigv() {
     } else {
       location.hash = options.locus
     }
-    browser = igv.createBrowser(div, options).then(function(browser) {
-       browser.on('locuschange', function (referenceFrame) {
+    igv.createBrowser(div, options).then(function(b) {
+      browser = b;
+      browser.on('locuschange', function (referenceFrame) {
             location.hash = referenceFrame.label
        });
     })
@@ -275,6 +365,7 @@ proc main() =
       tr.path = fs[0]
       tr.name = fs[1]
     tr.file_type = tr.path.file_type_ez
+
     tracks.add(tr)
 
   var tmpl = templ

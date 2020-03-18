@@ -6,9 +6,47 @@
       <title>jigv - igv.js runner</title>
 
 <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/igv@2.3.5/dist/igv.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+
 
 </head>
 <body>
     <div id="jigv"></div>
+<script type="text/javascript">
+
+    var cache = []
+jQuery(document).on("keydown", function(e) {
+    console.log("jigv")
+    var direction = "";
+    if(e.which == 39) {
+        direction = "right"
+    } else if (e.which == 37) {
+        direction = "left"
+    }
+    if (direction == "" ){
+        return
+    }
+    // we use the server to go "right", to go "left", we use this cache history
+    if(direction == "left") {
+        if(cache.length == 0) { return }
+        browser.$searchInput.val(cache.pop())
+        browser.$searchInput.change()
+        return
+    }
+    cache.push(browser.$searchInput.val())
+
+    e.stopPropagation();
+    jQuery.getJSON("/nextfeature/", {locus: browser.$searchInput.val()}, function(resp) {
+        if(!resp.success) {
+            console.log("error finding feature")
+            return
+        }
+        browser.$searchInput.val(resp.position)
+        browser.$searchInput.change()
+    })
+})
+</script>
+
+
 </body>
 </html>
