@@ -42,6 +42,21 @@ local: ssh -N -L localhost:5001:localhost:5001 $server
 
 Then browse localhost:5001 on your local machine.
 
+
+#### automated screenshots
+
+given a server running at: localhost:5001, a PNG screenshot for `region=chr5:1410040-1412784` can be created with
+
+```
+google-chrome --window-size=1200,1200 --headless \
+   --run-all-compositor-stages-before-draw \
+   --screenshot=${region/:/-}.png \
+   --virtual-time-budget=100000 "http://localhost:5001/#$region"
+```
+
+This can be scripted with your favorite language for a set of regions of interest.
+
+
 # installation
 
 grab a static linux binary from [releases](https://github.com/brentp/jigv/releases/latest)
