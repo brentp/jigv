@@ -1,55 +1,153 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>jigv - igv.js runner</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="Brent Pedersen" />
+    <title>jigv - igv.js runner</title>
 
-<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/igv@2.3.5/dist/igv.min.js"></script>
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
-
-
-</head>
-<body>
-    <div id="jigv"></div>
-<script type="text/javascript">
-
-    var cache = []
-jQuery(document).on("keydown", function(e) {
-    console.log("jigv")
-    var direction = "";
-    if(e.which == 39) {
-        direction = "right"
-    } else if (e.which == 37) {
-        direction = "left"
-    }
-    if (direction == "" ){
-        return
-    }
-    // we use the server to go "right", to go "left", we use this cache history
-    if(direction == "left") {
-        if(cache.length == 0) { return }
-        browser.$searchInput.val(cache.pop())
-        browser.$searchInput.change()
-        return
-    }
-    cache.push(browser.$searchInput.val())
-    // if cache gets too long, we drop the first elements.
-    if(cache.length > 500) { cache.splice(0, 400) }
-
-    e.stopPropagation();
-    jQuery.getJSON("/nextfeature/", {locus: browser.$searchInput.val()}, function(resp) {
-        if(!resp.success) {
-            console.log("error finding feature")
-            return
+    <script src="https://cdn.jsdelivr.net/npm/igv@2.4.0/dist/igv.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Patrick+Hand&display=swap">
+    <link rel="stylesheet" type="text/css"
+        href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.4.1/css/bootstrap.min.css">
+    <style>
+        .navbar-brand {
+            font-family: 'Patrick Hand', cursive;
+            font-size: 1.5rem;
         }
-        browser.$searchInput.val(resp.position)
-        browser.$searchInput.change()
-    })
-})
-</script>
 
-<div id="message">press left or right arrow keys to navigate through VCF records</div>
+        div.tooltip-inner {
+            max-width: 350px;
+        }
+    </style>
+</head>
 
+<body>
+    <nav class="navbar navbar-expand-md navbar-dark bg-dark py-0">
+        <div class="navbar-collapse collapse w-100 order-1 order-md-0 split-collapse">
+            <div class="navbar-nav mr-auto">
+                <div class="input-group input-group-sm d-none" id="vcf-features">
+                    <div class="input-group-prepend">
+                        <label class="input-group-text" for="features-button-group">VCF Features</label>
+                    </div>
+                    <div class="input-group-append" id="features-button-group">
+                        <button class="btn btn-secondary" id="previous-feature" type="button" data-toggle="tooltip"
+                            title="Return to previous feature (&#8592;)">Previous</button>
+                        <button class="btn btn-secondary" id="next-feature" type="button" data-toggle="tooltip"
+                            title="Advance to next feature (&#8594;)">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mx-auto-md order-0">
+            <button class="navbar-toggler mr-2" type="button" data-toggle="collapse" data-target=".split-collapse">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <a class="navbar-brand mx-auto py-0" href="#">JIGV</a>
+        </div>
+        <div class="navbar-collapse collapse w-100 order-3 split-collapse">
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item">
+                    <!-- preferably this would be docs -->
+                    <a class="nav-link" href="https://github.com/brentp/jigv">Repo</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="https://github.com/brentp/jigv/issues">Issues</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col" id="jigv"></div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        let options = <OPTIONS>
+        let cache = []
+        let browser
+
+        $("#previous-feature").click(function () {
+            var e = jQuery.Event("keydown")
+            e.which = 37
+            $(document).trigger(e)
+        })
+
+        $("#next-feature").click(function () {
+            var e = jQuery.Event("keydown")
+            e.which = 39
+            $(document).trigger(e)
+        })
+
+        // arrow presses for feature advance
+        jQuery(document).on("keydown", function (e) {
+            // console.log("jigv")
+            var direction = "";
+            if (e.which == 39) {
+                direction = "right"
+            } else if (e.which == 37) {
+                direction = "left"
+            }
+            if (direction == "") {
+                return
+            }
+            // we use the server to go "right", to go "left", we use this cache history
+            if (direction == "left") {
+                if (cache.length == 0) { return }
+                browser.$searchInput.val(cache.pop())
+                browser.$searchInput.change()
+                return
+            }
+            cache.push(browser.$searchInput.val())
+            // if cache gets too long, we drop the first elements.
+            if (cache.length > 500) { cache.splice(0, 400) }
+
+            e.stopPropagation();
+            jQuery.getJSON("/nextfeature/", { locus: browser.$searchInput.val() }, function (resp) {
+                if (!resp.success) {
+                    console.log("error finding feature")
+                    return
+                }
+                browser.$searchInput.val(resp.position)
+                browser.$searchInput.change()
+            })
+        })
+
+        const check_for_features = () => {
+            $.getJSON("/nextfeature/", { locus: browser.$searchInput.val() })
+                .done(function (data) {
+                    if (data.success) {
+                        $("#vcf-features").toggleClass("d-none")
+                    }
+                })
+                .fail(function () {
+                    console.log(`nextfeature call failed (${browser.$searchInput.val()})`)
+                });
+        }
+
+        $(document).ready(() => {
+            // register tooltips
+            $('[data-toggle="tooltip"]').tooltip()
+
+            let div = document.getElementById("jigv")
+            if (location.hash.substr(1)) {
+                options.locus = location.hash.substr(1)
+            } else {
+                location.hash = options.locus
+            }
+            igv.createBrowser(div, options).then(function (b) {
+                browser = b;
+                browser.on('locuschange', function (referenceFrame) {
+                    location.hash = referenceFrame.label
+                })
+                check_for_features()
+            })
+        })
+    </script>
 </body>
+
 </html>
