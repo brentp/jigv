@@ -51,10 +51,10 @@ proc get_type(T:Track): string =
 
 proc height(T:Track): int =
   if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
-    return 220
+    return 250
   case T.file_type
   of FileType.CRAM, FileType.BAM:
-    return 220
+    return 250
   of FileType.VCF, FileType.BCF:
     return 60
   else:
@@ -118,7 +118,7 @@ proc `$`*(T:Track): string =
     result &= &"\n  \"height\": {T.height},"
   if T.file_type in  {FileType.CRAM, FileType.BAM}:
     result &= """
-   alignmentRowHeight: 10,
+   alignmentRowHeight: 8,
    colorBy: "strand",
    showSoftClips: true,
    viewAsPairs: true,"""
@@ -170,7 +170,7 @@ proc `%`*(T:Track): JsonNode =
   if T.height != 0:
     fields["height"] = % T.height
   if T.file_type in  {FileType.CRAM, FileType.BAM}:
-    fields["alignmentRowHeight"] = % 10
+    fields["alignmentRowHeight"] = % 8
     fields["colorBy"] = % "strand"
     fields["showSoftClips"] = % true
     fields["viewAsPairs"] = % true
