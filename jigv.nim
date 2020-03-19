@@ -318,28 +318,29 @@ router igvrouter:
   get "/":
     resp index_html
 
-const insert_js = """
-<script type="text/javascript">
-var browser
-function jigv() {
-    let div = document.getElementById("jigv");
-    let options = <OPTIONS>
-    if(location.hash.substr(1)) {
-      options.locus = location.hash.substr(1)
-    } else {
-      location.hash = options.locus
-    }
-    igv.createBrowser(div, options).then(function(b) {
-      browser = b;
-      browser.on('locuschange', function (referenceFrame) {
-            location.hash = referenceFrame.label
-       });
-    })
+# const insert_js = """
+# <script type="text/javascript">
+# let browser
 
-}
+# function jigv() {
+#     let div = document.getElementById("jigv");
+#     let options = <OPTIONS>
+#     if(location.hash.substr(1)) {
+#       options.locus = location.hash.substr(1)
+#     } else {
+#       location.hash = options.locus
+#     }
+#     igv.createBrowser(div, options).then(function(b) {
+#       browser = b;
+#       browser.on('locuschange', function (referenceFrame) {
+#             location.hash = referenceFrame.label
+#        });
+#     })
 
-</script>
-"""
+# }
+
+# </script>
+# """
 
 const templ = staticRead("jigv-template.html")
 
@@ -388,8 +389,9 @@ proc main() =
   if args.region != "":
     options["locus"] = % args.region
 
-  index_html = tmpl.replace("</head>", insert_js.replace("<OPTIONS>", pretty(options)) & "</head>")
-  index_html = index_html.replace("</body>", """</body><script type="text/javascript">jigv()</script>""")
+  index_html = tmpl.replace("<OPTIONS>", pretty(options))
+#   index_html = tmpl.replace("</head>", insert_js.replace("<OPTIONS>", pretty(options)) & "</head>")
+#   index_html = index_html.replace("</body>", """</body><script type="text/javascript">jigv()</script>""")
 
   let settings = newSettings(port=parseInt(args.port).Port)
   var jester = initJester(igvrouter, settings)
