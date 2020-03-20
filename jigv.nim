@@ -20,8 +20,11 @@ type Track* = object
 var tracks*: seq[Track]
 var index_html: string
 
+proc isremote(path:string): bool =
+  result = path.startswith("http") or path.startswith("ftp:")
+
 proc file_type_ez(path:string): FileType =
-  if path.startswith("http"):
+  if path.isremote:
     if path.endswith(".bam"):
       return FileType.BAM
     elif path.endswith(".cram"):
@@ -78,12 +81,12 @@ proc format(T:Track): string =
     raise newException(ValueError, "unknown format for " & $T.file_type)
 
 proc url(t:Track): string =
-  if t.path.startswith("http") or t.path.startswith("ftp"):
+  if t.path.isremote:
     return t.path
   result = &"/data/tracks/{extractFileName(t.path)}"
 
 proc index_ext*(t:Track): string =
-  if t.path.startswith("http") or t.path.startswith("ftp"):
+  if t.path.isremote:
     case splitFile(t.path).ext
     of ".bam": return ".bai"
     of ".cram": return ".crai"
