@@ -12,8 +12,9 @@ With that, a server will start and a browser will open an igv.js viewer for your
 similiar to how you'd do with the java version of IGV. Without the `--open-browser` option, you can
 go to *http://$server:5001/* (where `$server` is often `localhost`).
 
+# installation
 
-User Quote: ["got it working under 1 minute instead of fiddling with igv.js...!"](https://twitter.com/wendyWongSW/status/1239935250559569922)
+grab a static linux binary from [releases](https://github.com/brentp/jigv/releases/latest)
 
 # notes and features
 
@@ -48,18 +49,12 @@ Then browse localhost:5001 on your local machine.
 given a server running at: localhost:5001, a PNG screenshot for `region=chr5:1410040-1412784` can be created with
 
 ```
-google-chrome --window-size=1200,1200 --headless \
-   --run-all-compositor-stages-before-draw \
-   --screenshot=${region/:/-}.png \
-   --virtual-time-budget=100000 "http://localhost:5001/#$region"
+google-chrome --window-size=1200,1200  --virtual-time-budget=10000 \
+   --headless --run-all-compositor-stages-before-draw \
+   --screenshot=${region/:/-}.png "http://localhost:5001/#$region"
 ```
 
-This can be scripted with your favorite language for a set of regions of interest.
-
-
-# installation
-
-grab a static linux binary from [releases](https://github.com/brentp/jigv/releases/latest)
+This can be scripted with your favorite language for a set of regions.
 
 # options
 
