@@ -91,9 +91,10 @@ Options:
 while this is most helpful when you don't already have a server, you can use it to quickly view files
 that are public:
 ```
+url=https://s3.amazonaws.com/1000genomes/phase3/data
 jigv -g hg19 \
     -r "chr5:1,278,267-1,281,011" \
-    -o "https://s3.amazonaws.com/1000genomes/phase3/data/HG00096/exome_alignment/HG00096.mapped.ILLUMINA.bwa.GBR.exome.20120522.bam#kid" \
-        "https://s3.amazonaws.com/1000genomes/phase3/data/NA18637/exome_alignment/NA18637.mapped.ILLUMINA.bwa.CHB.exome.20121211.bam#mom"
+    -o "$url/HG00096/exome_alignment/HG00096.mapped.ILLUMINA.bwa.GBR.exome.20120522.bam#kid" \
+       "$url/NA18637/exome_alignment/NA18637.mapped.ILLUMINA.bwa.CHB.exome.20121211.bam#mom"
 ```
 
