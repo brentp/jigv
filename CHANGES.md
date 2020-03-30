@@ -1,3 +1,7 @@
+v0.0.6
+======
++ more fixes for custom reference+cram
+
 v0.0.5
 ======
 + styling and left/right buttons by Joe Brown

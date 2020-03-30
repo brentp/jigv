@@ -1,4 +1,4 @@
-version       = "0.0.5"
+version       = "0.0.6"
 author        = "Brent Pedersen"
 description   = "igv.js server"
 license       = "MIT"

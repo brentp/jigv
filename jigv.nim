@@ -146,10 +146,12 @@ proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tup
 
     fh.setFilePos(offset)
     # not sure why we need + 1 here...
-    var data = newString(min(size, length)+1)
+    var data = newString(min(size, length+1))
     data[data.high] = 0.char
     let got = fh.readBuffer(data[0].addr.pointer, length)
-    doAssert got == data.high, $(got, length, "size:" & $size)
+    if got != data.high:
+      #, $(got, length, "size:" & $size, data.high)
+      data.setLen(got+1)
 
     let range_str = &"bytes {offset}-{offset + length}/{size}"
     let headers = @[(key:"Content-Type", value:"application/octet-stream"), (key:"Content-Range", value: range_str)]
@@ -276,8 +278,10 @@ router igvrouter:
   get "/data/tracks/@name":
     let name = extractFileName(@"name")
     var file_path: string
-    for tr in tracks:
-      if name == extractFileName(tr.path):
+    var tr: Track
+    for otr in tracks:
+      if name == extractFileName(otr.path):
+        tr = otr
         file_path = tr.path
 
     if file_path == "" and "Range" in request.headers.table:
@@ -301,7 +305,7 @@ router igvrouter:
 
     let r = request.headers["Range"]
 
-    var (headers, data) = file_path.read_range(r)
+    var (headers, data) = file_path.read_range(r, extra_bytes=int(tr.format == "cram"))
     resp(Http206, headers, data)
 
   get re"/reference/(.+)":
