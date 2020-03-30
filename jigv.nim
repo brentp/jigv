@@ -130,12 +130,14 @@ proc `$`*(T:Track): string =
     visibilityWindow: 200000,"""
   result &= "\n}"
 
-proc read_range(file_path:string, range_req:string): (seq[tuple[key: string, value: string]], string) =
+proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tuple[key: string, value: string]], string) =
+    ## the fasta request doesn't match the bam request so we use `extra_bytes` to
+    ## return 1 extra byte
 
     let r = range_req
     let byte_range = r.split("=")[1].split("-")
     let offset = parseInt(byte_range[0])
-    let length = parseInt(byte_range[1]) - offset
+    let length = parseInt(byte_range[1]) - offset + extra_bytes
 
     var fh:File
     if not open(fh, file_path):
@@ -314,7 +316,7 @@ router igvrouter:
       quit "can't handle reference request without range"
 
     let r = request.headers["Range"]
-    var (headers, data) = path.read_range(r)
+    var (headers, data) = path.read_range(r, extra_bytes=1)
     resp(Http206, headers, data)
 
 

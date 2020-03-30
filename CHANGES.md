@@ -3,6 +3,8 @@ v0.0.5
 + styling and left/right buttons by Joe Brown
 + better aesthetics (sized to fit a trio of bams +variant track in a laptop screen)
 + update readme to include directions on how to generate screenshots
++ fix for custom reference + cram
++ bump igv.js version to 2.4.1
 
 v0.0.4
 ======
