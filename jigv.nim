@@ -380,7 +380,6 @@ proc main() =
       tmpl = readFile(getEnv("JIGV_TEMPLATE"))
 
   let options = %* {
-      "genome": args.genome_build,
       "showCursorTrackingGuide": true,
       "tracks": tracks,
       "queryParametersSupported": true,
@@ -388,7 +387,10 @@ proc main() =
   if args.fasta != "":
     var rp = &"/reference/{args.fasta}"
     var rpi = &"/reference/{args.fasta}.fai"
-    options["reference"] = %* {"fastaURL": rp, "indexURL": rpi}
+    options["reference"] = %* {"fastaURL": rp, "indexURL": rpi, "id": extractFileName(args.fasta)}
+  else:
+    options["genome"] = % args.genome_build
+
   if args.region != "":
     options["locus"] = % args.region
 
