@@ -1,3 +1,7 @@
+v0.0.7 (dev)
+============
++ css from @brwnj
+
 v0.0.6
 ======
 + more fixes for custom reference+cram
