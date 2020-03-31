@@ -22,12 +22,34 @@
         div.tooltip-inner {
             max-width: 350px;
         }
-.igv-nav-bar-left-container svg {
-    vertical-align: top !important;
-}
-.igv-logo {
-    margin-top: 0px !important;
-}
+
+        .igv-nav-bar-left-container svg {
+            vertical-align: top !important;
+        }
+
+        .igv-popover-header svg {
+            vertical-align: top !important;
+        }
+
+        .igv-logo {
+            margin-top: 0px !important;
+        }
+
+        .popover-label {
+            font-weight: 600;
+            font-size: 1.1em;
+            text-transform: uppercase;
+            padding-left: 3px;
+        }
+
+        .popover-value {
+            /* overflow: hidden will make space for scrollbar */
+            overflow: visible;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            max-width: 256px;
+            display: inline-block;
+        }
     </style>
 </head>
 
@@ -58,13 +80,10 @@
             <ul class="navbar-nav ml-auto">
                 <li class="nav-item">
                     <!-- preferably this would be docs -->
-                    <a class="nav-link" href="https://github.com/brentp/jigv"
-                        target="_blank">Repo</a>
+                    <a class="nav-link" href="https://github.com/brentp/jigv" target="_blank">Repo</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link"
-                        href="https://github.com/brentp/jigv/issues"
-                        target="_blank">Issues</a>
+                    <a class="nav-link" href="https://github.com/brentp/jigv/issues" target="_blank">Issues</a>
                 </li>
             </ul>
         </div>
@@ -160,47 +179,59 @@
             })
         })
 
-function trackclick(track, data) {
+        function trackclick(track, data) {
+            // reformat read metadata when user clicks track
+            if (track.type != "alignment") {
+                return
+            }
+
+            var d = { tags: [] }
+            var hr = 0
+            data.forEach(function (kv) {
+                if (!kv.name) { hr += 1; return }
+                if (hr == 3) {
+                    d.tags.push(`${kv.name}:${kv.value}`)
+                } else {
+                    if (kv.name == "Mapped") { return }
+                    if (kv.value == "No") { return }
+                    d[kv.name] = kv.value
+                }
+            })
+            if (!d["Read Name"]) return; // the coverage track is also type alignment
 
 
-    if(track.type != "alignment") {
-        return
-    }
+            var html = `
+                <table class="igv-popover-table">
+                    <tr><td>${d["Read Name"]}</td></tr>
+                    <tr>
+                        <td><span class="popover-label">read:</span> ${d["Alignment Start"]} ${d["Read Strand"]}
+                          <span class="popover-label">cigar:</span> ${d["Cigar"]}</td>
+                    </tr>
+            `
 
-    var d = {tags:[]}
-    var hr = 0
-    data.forEach(function(kv) {
-        if(!kv.name) { hr += 1; return}
-        if(hr == 3){
-            d.tags.push(`${kv.name}:${kv.value}`)
-        } else {
-            if(kv.name == "Mapped"){ return }
-            if(kv.value == "No"){ return }
-            d[kv.name] = kv.value
+            if (d["Pair Orientation"]) {
+                html += `
+                    <tr><td><span class="popover-label">mate-position:</span> ${d["Mate Chromosome"]}:${d["Mate Start"]}${d["Mate Strand"]}</td></tr>
+                    <tr>
+                        <td><span class="popover-label">pair-orientation:</span> ${d["Pair Orientation"]}
+                          <span class="popover-label">insert-size:</span> ${d["Insert Size"]}</td>
+                    </tr>
+                `
+            }
+            html += `
+                    <tr><td><span class="popover-label">tags:</span> <span class="popover-value">${d.tags.join(" | ")}</span></td></tr>
+                    <tr>
+                        <td><span class="popover-label">base:</span> ${d["Genomic Location: "]} ${d["Read Base:"] || ""}
+                          <span class="popover-label">quality:</span> ${d["Base Quality:"] || ""}</td>
+                    </tr>
+                </table>
+            `
+
+            console.log(track)
+            console.log(data)
+            console.log(d)
+            return html
         }
-    })
-    if(!d["Read Name"]) return; // the coverage track is also type alignment
-
-
-    var html = `<table class="igv-popover-table">
-        <tr><td>${d["Read Name"]}</td></tr>
-        <tr><td>read: ${d["Alignment Start"]}${d["Read Strand"]} cigar:${d["Cigar"]}</td></tr>`
-
-    if(d["Pair Orientation"]){
-        html += `<tr><td>mate-position: ${d["Mate Chromosome"]}:${d["Mate Start"]}${d["Mate Strand"]}</td></tr>
-        <tr><td>pair-orientation:${d["Pair Orientation"]} insert-size: ${d["Insert Size"]}</td></tr>`
-    }
-    html += `<tr><td>tags:${d.tags.join(" | ")}</td></tr>
-        <tr><td>base:${d["Genomic Location: "]} <b>${d["Read Base:"]}</b> quality: ${d["Base Quality:"]}</td></tr>
-        </table>`
-
-
-
-    console.log(track)
-    console.log(data)
-    console.log(d)
-    return html
-}
     </script>
 </body>
 
