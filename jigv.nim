@@ -219,8 +219,8 @@ proc findNextFeature(ivcf:VCF, chrom:string, left:int, right:int, rep:int): regi
     else:
       var offset = 50
       if v.start.int - offset <= left: continue
-      # then show left end.
-      return (chrom, v.start.int - offset, v.start.int - offset + desired_range)
+      # then show left end centered in window
+      return (chrom, int(v.start.float - desired_range / 2), int(v.start.float + desired_range / 2))
 
 
   var contigs = ivcf.contigs
