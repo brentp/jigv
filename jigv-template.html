@@ -179,6 +179,8 @@ function trackclick(track, data) {
             d[kv.name] = kv.value
         }
     })
+    if(!d["Read Name"]) return; // the coverage track is also type alignment
+
 
     var html = `<table class="igv-popover-table">
         <tr><td>${d["Read Name"]}</td></tr>
