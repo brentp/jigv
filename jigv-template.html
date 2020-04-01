@@ -192,14 +192,17 @@
 
             var d = { tags: [] }
             var hr = 0
-			var done = true;
+			var done = false;
 			// data has the read and it's mate. the one with "Read Base:" is the
 			// one that we clicked on. need to count <hr> and reset.
             data.forEach(function (kv) {
+				if(done){ return; }
                 if (!kv.name) { 
 					if(kv.startsWith("--------")){
 						if(d["Read Base:"]) { done=true; return; }
 						hr = 0;
+						d.tags = []
+						return
 					} else {
 						hr += 1; return 
 					}

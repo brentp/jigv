@@ -2,6 +2,7 @@ v0.0.7 (dev)
 ============
 + css from @brwnj
 + better positioning of variant within window when using ->, <- arrow keys for SVs
++ more concise popover for alignment track click
 
 v0.0.6
 ======
