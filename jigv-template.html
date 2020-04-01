@@ -186,14 +186,24 @@
 
         function trackclick(track, data) {
             // reformat read metadata when user clicks track
-            if (track.type != "alignment") {
+            if (track.type != "alignment" || !data) {
                 return
             }
 
             var d = { tags: [] }
             var hr = 0
+			var done = true;
+			// data has the read and it's mate. the one with "Read Base:" is the
+			// one that we clicked on. need to count <hr> and reset.
             data.forEach(function (kv) {
-                if (!kv.name) { hr += 1; return }
+                if (!kv.name) { 
+					if(kv.startsWith("--------")){
+						if(d["Read Base:"]) { done=true; return; }
+						hr = 0;
+					} else {
+						hr += 1; return 
+					}
+				}
                 if (hr == 3) {
                     d.tags.push(`${kv.name}:${kv.value}`)
                 } else {
@@ -210,7 +220,8 @@
                     <tr><td>${d["Read Name"]}</td></tr>
                     <tr>
                         <td><span class="popover-label">read:</span> ${d["Alignment Start"]} ${d["Read Strand"]}
-                          <span class="popover-label">cigar:</span> ${d["Cigar"]}</td>
+                          <span class="popover-label">cigar:</span> ${d["Cigar"]}
+                          <span class="popover-label">mapQ:</span> ${d["Mapping Quality"]}</td>
                     </tr>
             `
 
@@ -218,7 +229,7 @@
                 html += `
                     <tr><td><span class="popover-label">mate-position:</span> ${d["Mate Chromosome"]}:${d["Mate Start"]}${d["Mate Strand"]}</td></tr>
                     <tr>
-                        <td><span class="popover-label">pair-orientation:</span> ${d["Pair Orientation"]}
+                        <td><span class="popover-label">orientation:</span> ${d["Pair Orientation"]}
                           <span class="popover-label">insert-size:</span> ${d["Insert Size"]}</td>
                     </tr>
                 `
