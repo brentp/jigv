@@ -123,6 +123,7 @@ proc `$`*(T:Track): string =
     result &= """
    alignmentRowHeight: 8,
    colorBy: "strand",
+   coverageTrackHeight: 24,
    showSoftClips: true,
    viewAsPairs: true,"""
   elif T.file_type == FileType.VCF:
@@ -179,6 +180,7 @@ proc `%`*(T:Track): JsonNode =
   if T.file_type in  {FileType.CRAM, FileType.BAM}:
     fields["alignmentRowHeight"] = % 8
     fields["colorBy"] = % "strand"
+    fields["coverageTrackHeight"] = % 24
     fields["showSoftClips"] = % true
     fields["viewAsPairs"] = % true
   return JsonNode(kind: JObject, fields: fields)

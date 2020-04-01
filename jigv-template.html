@@ -223,10 +223,11 @@
                     </tr>
                 `
             }
+			var c = {"A": "green", "C": "blue", "G": "rgb(209,113,5)", "T": "red", "N": "gray"}[(d["Read Base:"] || "N").toUpperCase()]
             html += `
                     <tr><td><span class="popover-label">tags:</span> <span class="popover-value">${d.tags.join(" | ")}</span></td></tr>
                     <tr>
-                        <td><span class="popover-label">base:</span> ${d["Genomic Location: "]} ${d["Read Base:"] || ""}
+				<td><span class="popover-label">base:</span> ${d["Genomic Location: "]} <span style="font-weight:900;color:${c}">${d["Read Base:"] || ""}</span>
                           <span class="popover-label">quality:</span> ${d["Base Quality:"] || ""}</td>
                     </tr>
                 </table>
