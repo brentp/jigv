@@ -16,6 +16,7 @@ type Track* = object
   file_type: FileType
   path*:string
   name*: string
+  n_tracks*:int
 
 var tracks*: seq[Track]
 var index_html: string
@@ -53,11 +54,14 @@ proc get_type(T:Track): string =
     raise newException(ValueError, "unknown file type for " & $T.file_type)
 
 proc height(T:Track): int =
+  var mult = 1
+  if T.n_tracks < 3:
+    mult = 2
   if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
-    return 250
+    return 250 * mult
   case T.file_type
   of FileType.CRAM, FileType.BAM:
-    return 250
+    return 250 * mult
   of FileType.VCF, FileType.BCF:
     return 60
   else:
@@ -361,7 +365,7 @@ proc main() =
   var first_vcf = -1
   for i, f in args.files:
     var fs = f.split("#")
-    var tr = Track(name: extractFileName(f), path: f)
+    var tr = Track(name: extractFileName(f), path: f, n_tracks:args.files.len)
     if fs.len == 2:
       tr.path = fs[0]
       tr.name = fs[1]
