@@ -1,9 +1,14 @@
-v0.0.7 (dev)
+v0.0.8 (dev)
 ============
++ show help when run with no args (#7)
+
+v0.0.7
+======
 + css from @brwnj
 + better positioning of variant within window when using ->, <- arrow keys for SVs
 + more concise popover for alignment track click
 + given a VCF and no `--region` specified, the viewer will open at the first variant
++ alignment track-height is larger when fewer tracks.
 
 v0.0.6
 ======

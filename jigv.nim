@@ -358,7 +358,9 @@ proc main() =
     # TODO: regions files
     arg("files", help="bam/cram/vcf/bed file(s) (with indexes)", nargs= -1)
 
-  var args = p.parse()
+  var argv = commandLineParams()
+  if argv.len == 0: argv.add("-h")
+  var args = p.parse(argv)
   if args.help:
     quit(0)
 
