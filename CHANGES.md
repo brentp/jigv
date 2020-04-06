@@ -3,6 +3,7 @@ v0.0.7 (dev)
 + css from @brwnj
 + better positioning of variant within window when using ->, <- arrow keys for SVs
 + more concise popover for alignment track click
++ given a VCF and no `--region` specified, the viewer will open at the first variant
 
 v0.0.6
 ======

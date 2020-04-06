@@ -191,6 +191,18 @@ type region = tuple[chrom:string, start:int, stop:int]
 template stripChr*[T:string|cstring](s:T): string =
   if s.len > 3 and ($s).startswith("chr"): ($s)[3..<s.len] else: $s
 
+proc get_first_variant(path:string): string =
+  ## get the first variant in a VCF file
+  var ivcf:VCF
+  if not ivcf.open(path):
+    return ""
+  defer:
+    ivcf.close
+
+  for v in ivcf:
+    var p = v.start
+    return &"{v.CHROM}:{p - 79}-{p + 80}"
+
 proc findNextFeature(ivcf:VCF, chrom:string, left:int, right:int, rep:int): region =
   var contig_i = 0
   for i, c in ivcf.contigs:
@@ -329,36 +341,12 @@ router igvrouter:
   get "/":
     resp index_html
 
-# const insert_js = """
-# <script type="text/javascript">
-# let browser
-
-# function jigv() {
-#     let div = document.getElementById("jigv");
-#     let options = <OPTIONS>
-#     if(location.hash.substr(1)) {
-#       options.locus = location.hash.substr(1)
-#     } else {
-#       location.hash = options.locus
-#     }
-#     igv.createBrowser(div, options).then(function(b) {
-#       browser = b;
-#       browser.on('locuschange', function (referenceFrame) {
-#             location.hash = referenceFrame.label
-#        });
-#     })
-
-# }
-
-# </script>
-# """
-
 const templ = staticRead("jigv-template.html")
 
 proc main() =
 
   let p = newParser("jigv"):
-    option("-r", "--region", help="optional region to start at", default="chr1")
+    option("-r", "--region", help="optional region to start at")
     flag("-o", "--open-browser", help="open browser")
     option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
     option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and needed to decode CRAM")
@@ -370,15 +358,23 @@ proc main() =
   if args.help:
     quit(0)
 
-  for f in args.files:
+  var first_vcf = -1
+  for i, f in args.files:
     var fs = f.split("#")
     var tr = Track(name: extractFileName(f), path: f)
     if fs.len == 2:
       tr.path = fs[0]
       tr.name = fs[1]
     tr.file_type = tr.path.file_type_ez
+    if first_vcf == -1 and tr.file_type == FileType.VCF:
+      first_vcf = i
+
 
     tracks.add(tr)
+
+  if args.region == "" and first_vcf != -1:
+    args.region = get_first_variant(tracks[first_vcf].path)
+    echo "set args.region to:", args.region
 
   var tmpl = templ
   if getEnv("JIGV_TEMPLATE") != "":
