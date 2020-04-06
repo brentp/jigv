@@ -82,10 +82,6 @@ Options:
 + if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
 + not all file types are supported
 
-# to-do
-+ need a way to automate taking images of a set of regions [#2](https://github.com/brentp/jigv/issues/2)
-+ given a VCF or bed, need a way to iterate through the rows (e.g. ctrl+f in desktop igv) [#1](https://github.com/brentp/jigv/issues/1)
-
 # examples
 
 while this is most helpful when you don't already have a server, you can use it to quickly view files
