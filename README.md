@@ -76,10 +76,9 @@ Options:
   -h, --help                 Show this help
 ```
 
-# custom javascript
+#### custom javascript
 
-In most cases, the defaults should be sufficient, but
-the --js option allows the user to inject some javascript to affect the configuration. An example is:
+the --js option allows the user to inject some javascript to affect the configuration. An example:
 
 ```
   --js "options.tracks[0].height = 500; options.tracks[0].colorBy = 'firstOfPairStrand'"
