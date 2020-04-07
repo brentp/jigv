@@ -1,5 +1,5 @@
-v0.0.8 (dev)
-============
+v0.0.8
+======
 + show help when run with no args (#7)
 + allow injection of custom javascript to affect `options` and `option.tracks` (#4)
 

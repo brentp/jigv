@@ -76,8 +76,6 @@ Options:
   -h, --help                 Show this help
 ```
 
-#### custom javascript
-
 the --js option allows the user to inject some javascript to affect the configuration. An example:
 
 ```
