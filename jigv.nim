@@ -350,12 +350,12 @@ const templ = staticRead("jigv-template.html")
 proc main() =
 
   let p = newParser("jigv"):
-    option("-r", "--region", help="optional region to start at")
+    option("-r", "--region", help="optional region to start viewing (will default to first variant in first vcf)")
     flag("-o", "--open-browser", help="open browser")
     option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
     option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and needed to decode CRAM")
     option("-p", "--port", default="5001")
-    # TODO: regions files
+    option("--js", help="custom javascript to inject. will have access to `options` and `options.tracks`. if this ends in .js it is read as a file")
     arg("files", help="bam/cram/vcf/bed file(s) (with indexes)", nargs= -1)
 
   var argv = commandLineParams()
@@ -405,8 +405,9 @@ proc main() =
     options["locus"] = % args.region
 
   index_html = tmpl.replace("<OPTIONS>", pretty(options))
-#   index_html = tmpl.replace("</head>", insert_js.replace("<OPTIONS>", pretty(options)) & "</head>")
-#   index_html = index_html.replace("</body>", """</body><script type="text/javascript">jigv()</script>""")
+  var js:string = args.js
+  if js.endsWith(".js"): js = readFile(js)
+  index_html = index_html.replace("<JIGV_CUSTOM_JS>", js)
 
   let settings = newSettings(port=parseInt(args.port).Port)
   var jester = initJester(igvrouter, settings)

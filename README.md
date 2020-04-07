@@ -72,13 +72,23 @@ Options:
                              genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json) (default: hg38)
   -f, --fasta=FASTA          optional fasta reference file if not in hosted and needed to decode CRAM
   -p, --port=PORT            (default: 5001)
+  --js=JS                    custom javascript to inject. will have access to `options` and `options.tracks`. if this ends in .js it is read as a file
   -h, --help                 Show this help
 ```
+
+# custom javascript
+
+In most cases, the defaults should be sufficient, but
+the --js option allows the user to inject some javascript to affect the configuration. An example is:
+
+```
+  --js "options.tracks[0].height = 500; options.tracks[0].colorBy = 'firstOfPairStrand'"
+```
+to change the height and the coloring strategy for the first track. 
 
 # limitations
 
 + this is likely insecure in many ways.
-+ there will soon be a way to customize the options and javascript (but this probably covers 85% of use-cases as-is).
 + if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
 + not all file types are supported
 

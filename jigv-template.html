@@ -172,6 +172,8 @@
             } else {
                 location.hash = options.locus
             }
+            // this is replaced and filled with any custom javascript from the user.
+            <JIGV_CUSTOM_JS>
             igv.createBrowser(div, options).then(function (b) {
                 browser = b;
                 browser.on('locuschange', function (referenceFrame) {
