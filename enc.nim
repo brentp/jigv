@@ -1,0 +1,74 @@
+import hts/bam
+import hts/vcf
+import base64
+import os
+import random
+import strutils
+import strformat
+
+randomize()
+
+proc encode*(ibam:Bam, region:string): string =
+
+  var obam:Bam
+  var path = os.getTempDir() & "/" &  $(rand(int.high)) & ".bam"
+
+  defer:
+    discard os.tryRemoveFile(path)
+
+  if not obam.open(path, mode="wb"):
+    quit "could not open open bam"
+
+  obam.write_header(ibam.hdr)
+
+  for aln in ibam.query(region):
+    obam.write(aln)
+
+  obam.close()
+
+  result = base64.encode(path.readFile)
+
+proc encode*(ivcf:VCF, region:string): string =
+
+  var ovcf:VCF
+  var path = os.getTempDir() & "/" &  $(rand(int.high)) & ".vcf.gz"
+
+  defer:
+    discard os.tryRemoveFile(path)
+
+  if not ovcf.open(path, mode="wz"):
+    quit "could not open open bam"
+
+  let chrom = region.split(":")[0]
+  var new_header: seq[string]
+  for l in ($(ivcf.header)).split("\n"):
+    if l.startswith("##contig=") and &"ID={chrom}," notin l: continue
+    new_header.add(l)
+
+  var h:vcf.Header
+  h.from_string(new_header.join("\n"))
+
+  # TODO: can drop contig lines from header.
+  ovcf.copy_header(h)
+  doAssert ovcf.write_header
+
+  for v in ivcf.query(region):
+    doAssert ovcf.write_variant(v)
+
+  ovcf.close()
+  result = base64.encode(path.readFile)
+
+when isMainModule:
+
+  var ibam:Bam
+  if not ibam.open("/data/human/hg002.cram", fai="/data/human/g1k_v37_decoy.fa", index=true):
+    quit "could not open cram"
+
+  echo encode(ibam, "1:22000000-22000900")
+
+  var ivcf:VCF
+  if not ivcf.open("/data/human/HG002_SVs_Tier1_v0.6.vcf.gz"):
+    quit "could not open vcf"
+
+  echo encode(ivcf, "1:250000-3000000")
+

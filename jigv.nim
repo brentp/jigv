@@ -9,14 +9,18 @@ import re
 import hts
 import httpcore
 import hts/files
+import hts/bam
+import hts/vcf
 import tables
 import json
+import ./enc
 
 type Track* = object
   file_type: FileType
   path*:string
   name*: string
   n_tracks*:int
+  reference*:string
 
 var tracks*: seq[Track]
 var index_html: string
@@ -88,6 +92,22 @@ proc url(t:Track): string =
   if t.path.isremote:
     return t.path
   result = &"/data/tracks/{extractFileName(t.path)}"
+
+proc dataurl(t:Track, region:string): string =
+
+  case t.path.format:
+  of "bam", "cram":
+    var ibam:Bam
+    if not ibam.open(t.path, fai=t.reference, index=true):
+      quit &"couldnt open bam/cram file {t.path} with reference {t.reference}"
+    result = "data:application/gzip;base64," & ibam.encode(region)
+    ibam.close()
+  of "vcf", "bcf":
+    var ivcf:VCF
+    if not ivcf.open(t.path):
+      quit &"couldnt open vcf/bcf file: {t.path}"
+    result = "data:application/gzip;base64," & ivcf.encode(region)
+    ivcf.close()
 
 proc index_ext*(t:Track): string =
   if t.path.isremote:
