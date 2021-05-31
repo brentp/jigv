@@ -12,6 +12,20 @@ import strformat
 
 randomize()
 
+const prefix = "data:application/gzip;base64,"
+
+template stripChr*[T:string|cstring](s:T): string =
+  if s.len > 3 and ($s).startswith("chr"): ($s)[3..<s.len] else: $s
+
+proc sameChrom(a: string, b: string): bool =
+  return stripChr(a) == stripChr(b)
+
+proc check_chrom(targets: seq[Target|Contig], chrom:string): string =
+  for t in targets:
+    if sameChrom(t.name, chrom):
+      return t.name
+  raise newException(KeyError, &"[jigv] error chromosome: {chrom} not found in bam")
+
 proc encode*(ibam:Bam, region:string): string =
 
   var obam:Bam
@@ -25,12 +39,17 @@ proc encode*(ibam:Bam, region:string): string =
 
   obam.write_header(ibam.hdr)
 
+  # handle chr prefix stuff
+  var chrom = region.split(':')[0]
+  chrom = check_chrom(ibam.hdr.targets, chrom)
+  var region = &"{chrom}:{region.split(':')[1]}"
+
   for aln in ibam.query(region):
     obam.write(aln)
 
   obam.close()
 
-  result = base64.encode(path.readFile)
+  result = prefix & base64.encode(path.readFile)
 
 proc encode*(ivcf:VCF, region:string): string =
 
@@ -43,7 +62,9 @@ proc encode*(ivcf:VCF, region:string): string =
   if not ovcf.open(path, mode="wz"):
     quit "could not open open bam"
 
-  let chrom = region.split(":")[0]
+  var contigs = ivcf.contigs
+  let chrom = check_chrom(contigs, region.split(":")[0])
+
   var new_header: seq[string]
   for l in ($(ivcf.header)).split("\n"):
     if l.startswith("##contig=") and &"ID={chrom}," notin l: continue
@@ -60,23 +81,25 @@ proc encode*(ivcf:VCF, region:string): string =
     doAssert ovcf.write_variant(v)
 
   ovcf.close()
-  result = base64.encode(path.readFile)
+  result = prefix & base64.encode(path.readFile)
+
+proc encode*(s:string): string =
+  return prefix & base64.encode(compress(s))
 
 proc encode*(fai:Fai, region:string): string =
-  var s = fai.get(region)
+  var s:string
+  try:
+    s = fai.get(region)
+  except:
+    s = fai.get(if not region.startswith("chr"): "chr" & region else: stripChr(region))
+    stderr.write_line "[jigv] found fasta sequence with chr prefix change"
   var tmp = &">{region}\n{s}"
-  result = base64.encode(compress(tmp))
+  result = prefix & base64.encode(compress(tmp))
 
 type TrackFileType* {.pure.} = enum
   cytoband
   bed
   bed12
-
-template stripChr*[T:string|cstring](s:T): string =
-  if s.len > 3 and ($s).startswith("chr"): ($s)[3..<s.len] else: $s
-
-proc sameChrom(a: string, b: string): bool =
-  return stripChr(a) == stripChr(b)
 
 proc encode*(path:string, region:string, typ:TrackFileType): string =
 
@@ -98,7 +121,7 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
         if e < start: continue
       clines.add(line)
     var tmp = clines.join("\n") & "\n"
-    return base64.encode(compress(tmp))
+    return prefix & base64.encode(compress(tmp))
 
   of TrackFileType.bed12:
 
@@ -114,9 +137,7 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     for l in bgz.query(chromstuff[0], start - 1, stop):
       clines.add(l)
     var tmp = clines.join("\n") & "\n"
-    return base64.encode(compress(tmp))
-
-
+    return prefix & base64.encode(compress(tmp))
 
 when isMainModule:
 

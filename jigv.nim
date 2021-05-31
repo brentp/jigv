@@ -75,9 +75,9 @@ proc height(T:Track): int =
     return 50
 
 proc format(T:Track): string =
-  if T.path.endsWith(".cram"):
+  if T.path.split('#')[0].endsWith(".cram"):
     return "cram"
-  if T.path.endsWith(".bam"):
+  if T.path.split('#')[0].endsWith(".bam"):
     return "bam"
   case T.file_type
   of FileType.CRAM, FileType.BAM:
@@ -85,9 +85,9 @@ proc format(T:Track): string =
   of FileType.VCF, FileType.BCF:
     return "vcf"
   else:
-    if T.path.endsWith(".bed") or T.path.endsWith(".bed.gz") or T.path.endsWith(".bedgraph"):
+    if T.path.split('#')[0].endsWith(".bed") or T.path.split('#')[0].endsWith(".bed.gz") or T.path.split('#')[0].endsWith(".bedgraph"):
       return "bed"
-    if T.path.endsWith(".bw") or T.path.endsWith(".wig") or T.path.toLowerAscii.endswith(".bigwig"):
+    if T.path.split('#')[0].endsWith(".bw") or T.path.split('#')[0].endsWith(".wig") or T.path.split('#')[0].toLowerAscii.endswith(".bigwig"):
       return "wig"
     raise newException(ValueError, "unknown format for " & $T.file_type)
 
@@ -102,22 +102,22 @@ proc dataurl(t:Track): string =
   # otherwise, we rely on the server
   if t.region == "": return t.url
 
-  case t.path.format:
+  case t.format
   of "bam", "cram":
     var ibam:Bam
     if not ibam.open(t.path, fai=t.reference, index=true):
       quit &"couldnt open bam/cram file {t.path} with reference {t.reference}"
-    result = "data:application/gzip;base64," & ibam.encode(t.region)
+    result = ibam.encode(t.region)
     ibam.close()
   of "vcf", "bcf":
     var ivcf:VCF
     if not ivcf.open(t.path):
       quit &"couldnt open vcf/bcf file: {t.path}"
-    result = "data:application/gzip;base64," & ivcf.encode(t.region)
+    result = ivcf.encode(t.region)
     ivcf.close()
   of "bed":
     # TODO: check for index and use bed12
-    result = "data:application/gzip;base64," & t.path.encode(t.region, TrackFileType.bed)
+    result = t.path.encode(t.region, TrackFileType.bed)
 
   else:
     return t.url
@@ -147,10 +147,10 @@ proc indexUrl(t:Track): string =
 proc `$`*(T:Track): string =
   result = &"""{{
   type: "{T.get_type}", format: "{T.format}",
-  url: "{T.url}","""
+  url: "{T.dataurl}","""
   if T.region == "":
     try:
-      result &= """
+      result &= &"""
     indexURL: "{T.indexUrl}","""
     except ValueError:
       discard
@@ -204,7 +204,7 @@ proc `%`*(T:Track): JsonNode =
   fields["type"] = % T.get_type
   if T.format != "wig":
     fields["format"] = % T.format
-  fields["url"] = % T.url
+  fields["url"] = % T.dataurl
   if T.region == "":
     try:
       fields["indexURL"] = % T.indexUrl
@@ -380,6 +380,36 @@ router igvrouter:
   get "/":
     resp index_html
 
+proc fill(templ:string, args:auto, tracks:var seq[Track], options:JsonNode, first_vcf_track_index:int) =
+  # if we are here, then we are filling the template with each track with the
+  # data urls.
+  doAssert args.region != ""
+  for tr in tracks.mitems:
+    tr.region = args.region
+
+  options["tracks"] = %* tracks
+  options["locus"] = % args.region
+
+  var fa:Fai
+  if args.fasta != "" and fa.open(args.fasta):
+    options["reference"] = %* {"fastaURL": fa.encode(args.region) }
+    if args.cytoband != "":
+      options["reference"]["cytobandURL"] = % args.cytoband.encode(args.region, TrackFileType.cytoband)
+  else:
+      options["genome"] = % args.genome_build
+
+  var options = %* {
+    "sessionURL": % encode($(options))
+  }
+
+  var index_html = templ.replace("<OPTIONS>", pretty(options))
+  var js:string = args.js
+  if js.endsWith(".js"): js = readFile(js)
+  index_html = index_html.replace("<JIGV_CUSTOM_JS>", js)
+  echo index_html
+
+
+
 const templ = staticRead("jigv-template.html")
 
 proc main() =
@@ -389,7 +419,8 @@ proc main() =
     flag("-o", "--open-browser", help="open browser")
     option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
     option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and needed to decode CRAM")
-    option("-p", "--port", default="5001")
+    option("-c", "--cytoband", default="", help="optional path to cytoband bed file")
+    option("-p", "--port", default="", help="if this is not specified, jigv will try to set up the page so it doesn't need a server. (otherwise, a value like '5001' is a good choice.")
     option("--js", help="custom javascript to inject. will have access to `options` and `options.tracks`. if this ends in .js it is read as a file")
     arg("files", help="bam/cram/vcf/bed file(s) (with indexes)", nargs= -1)
 
@@ -413,6 +444,7 @@ proc main() =
 
     tracks.add(tr)
 
+  args.region = args.region.replace(",", "")
   if args.region == "" and first_vcf != -1:
     args.region = get_first_variant(tracks[first_vcf].path)
     echo "set args.region to:", args.region
@@ -426,29 +458,36 @@ proc main() =
 
   let options = %* {
       "showCursorTrackingGuide": true,
+      "showChromosomeWidget": false,
       "tracks": tracks,
       "queryParametersSupported": true,
     }
-  if args.fasta != "":
-    var rp = &"/reference/{args.fasta}"
-    var rpi = &"/reference/{args.fasta}.fai"
-    options["reference"] = %* {"fastaURL": rp, "indexURL": rpi, "id": extractFileName(args.fasta)}
+
+  if args.port == "":
+    tmpl.fill(args, tracks, options, first_vcf)
+
   else:
-    options["genome"] = % args.genome_build
 
-  if args.region != "":
-    options["locus"] = % args.region
+    if args.fasta != "":
+      var rp = &"/reference/{args.fasta}"
+      var rpi = &"/reference/{args.fasta}.fai"
+      options["reference"] = %* {"fastaURL": rp, "indexURL": rpi, "id": extractFileName(args.fasta)}
+    else:
+      options["genome"] = % args.genome_build
 
-  index_html = tmpl.replace("<OPTIONS>", pretty(options))
-  var js:string = args.js
-  if js.endsWith(".js"): js = readFile(js)
-  index_html = index_html.replace("<JIGV_CUSTOM_JS>", js)
+    if args.region != "":
+      options["locus"] = % args.region
 
-  let settings = newSettings(port=parseInt(args.port).Port)
-  var jester = initJester(igvrouter, settings)
-  if args.open_browser:
-    openDefaultBrowser(&"http://localhost:{args.port}/")
-  jester.serve()
+    index_html = tmpl.replace("<OPTIONS>", pretty(options))
+    var js:string = args.js
+    if js.endsWith(".js"): js = readFile(js)
+    index_html = index_html.replace("<JIGV_CUSTOM_JS>", js)
+
+    let settings = newSettings(port=parseInt(args.port).Port)
+    var jester = initJester(igvrouter, settings)
+    if args.open_browser:
+      openDefaultBrowser(&"http://localhost:{args.port}/")
+    jester.serve()
 
 when isMainModule:
   main()
