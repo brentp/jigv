@@ -1,6 +1,7 @@
 import hts/bam
 import hts/vcf
 import hts/fai
+import hts/bgzf/bgzi
 import hts/files
 import zippy
 import base64
@@ -68,6 +69,8 @@ proc encode*(fai:Fai, region:string): string =
 
 type FileType* {.pure.} = enum
   cytoband
+  bed
+  bed12
 
 template stripChr*[T:string|cstring](s:T): string =
   if s.len > 3 and ($s).startswith("chr"): ($s)[3..<s.len] else: $s
@@ -78,16 +81,42 @@ proc sameChrom(a: string, b: string): bool =
 proc encode*(path:string, region:string, typ:FileType): string =
 
   let chrom = stripChr(region.split(":")[0])
+  let start = parseInt(region.split(":")[1].split("-")[0])
+  let stop =  parseInt(region.split(":")[1].split("-")[1])
 
   case typ
-  of FileType.cytoband:
+  of FileType.cytoband, FileType.bed:
     var clines: seq[string]
     for line in path.hts_lines:
       var toks = line.split("\t")
       if not sameChrom(toks[0], chrom): continue
+      # for bed format, we check the actual positions.
+      if typ == FileType.bed:
+        let s = parseInt(toks[1])
+        if s > stop: continue
+        let e = parseInt(toks[2])
+        if e < start: continue
       clines.add(line)
     var tmp = clines.join("\n") & "\n"
     return base64.encode(compress(tmp))
+
+  of FileType.bed12:
+
+    var bgz:BGZI
+    if not bgz.open(path):
+      stderr.write_line &"[jigv] warning: {path} should be compressed and with csi index. trying (slow) full search over lines instead."
+      return path.encode(region, FileType.bed)
+
+    var chromstuff = region.split(":")
+    var start = parseInt(chromstuff[1].split('-')[0])
+    var stop = parseInt(chromstuff[1].split('-')[1])
+    var clines:seq[string]
+    for l in bgz.query(chromstuff[0], start - 1, stop):
+      clines.add(l)
+    var tmp = clines.join("\n") & "\n"
+    return base64.encode(compress(tmp))
+
+
 
 when isMainModule:
 
@@ -111,4 +140,7 @@ when isMainModule:
   #echo fa.encode("chr5:474488-475489")
   #
 
-  echo encode("/home/brentp/src/igv-reports/examples/variants/cytoBandIdeo.txt", "chr5:474969-475009", FileType.cytoband)
+  #echo encode("/home/brentp/src/igv-reports/examples/variants/cytoBandIdeo.txt", "chr5:474969-475009", FileType.cytoband)
+  #
+
+  echo encode("/home/brentp/src/igv-reports/examples/variants/refGene.sort.bed.gz", "chr5:474969-475009", FileType.bed12)
