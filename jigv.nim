@@ -21,6 +21,9 @@ type Track* = object
   name*: string
   n_tracks*:int
   reference*:string
+  # if region is specified, then we base64 encode the track, otherwise we
+  # use the server.
+  region:string
 
 var tracks*: seq[Track]
 var index_html: string
@@ -93,21 +96,31 @@ proc url(t:Track): string =
     return t.path
   result = &"/data/tracks/{extractFileName(t.path)}"
 
-proc dataurl(t:Track, region:string): string =
+proc dataurl(t:Track): string =
+
+  # region is the swithc. if we have it, we use it and encode
+  # otherwise, we rely on the server
+  if t.region == "": return t.url
 
   case t.path.format:
   of "bam", "cram":
     var ibam:Bam
     if not ibam.open(t.path, fai=t.reference, index=true):
       quit &"couldnt open bam/cram file {t.path} with reference {t.reference}"
-    result = "data:application/gzip;base64," & ibam.encode(region)
+    result = "data:application/gzip;base64," & ibam.encode(t.region)
     ibam.close()
   of "vcf", "bcf":
     var ivcf:VCF
     if not ivcf.open(t.path):
       quit &"couldnt open vcf/bcf file: {t.path}"
-    result = "data:application/gzip;base64," & ivcf.encode(region)
+    result = "data:application/gzip;base64," & ivcf.encode(t.region)
     ivcf.close()
+  of "bed":
+    # TODO: check for index and use bed12
+    result = "data:application/gzip;base64," & t.path.encode(t.region, TrackFileType.bed)
+
+  else:
+    return t.url
 
 proc index_ext*(t:Track): string =
   if t.path.isremote:
@@ -135,11 +148,12 @@ proc `$`*(T:Track): string =
   result = &"""{{
   type: "{T.get_type}", format: "{T.format}",
   url: "{T.url}","""
-  try:
-    result &= """
-  indexURL: "{T.indexUrl}","""
-  except ValueError:
-    discard
+  if T.region == "":
+    try:
+      result &= """
+    indexURL: "{T.indexUrl}","""
+    except ValueError:
+      discard
 
   if T.height != 0:
     result &= &"\n  \"height\": {T.height},"
@@ -155,7 +169,7 @@ proc `$`*(T:Track): string =
     visibilityWindow: 200000,"""
   result &= "\n}"
 
-proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tuple[key: string, value: string]], string) =
+proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tuple[key: string, val: string]], string) =
     ## the fasta request doesn't match the bam request so we use `extra_bytes` to
     ## return 1 extra byte
 
@@ -179,7 +193,7 @@ proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tup
       data.setLen(got+1)
 
     let range_str = &"bytes {offset}-{offset + length}/{size}"
-    let headers = @[(key:"Content-Type", value:"application/octet-stream"), (key:"Content-Range", value: range_str)]
+    let headers = @[(key:"Content-Type", val:"application/octet-stream"), (key:"Content-Range", val: range_str)]
     fh.close
 
     return (headers, data)
@@ -191,10 +205,11 @@ proc `%`*(T:Track): JsonNode =
   if T.format != "wig":
     fields["format"] = % T.format
   fields["url"] = % T.url
-  try:
-    fields["indexURL"] = % T.indexUrl
-  except ValueError:
-    discard
+  if T.region == "":
+    try:
+      fields["indexURL"] = % T.indexUrl
+    except ValueError:
+      discard
 
   if fields["type"] == % "annotation":
     fields["displayMode"] = % "SQUISHED"
@@ -298,7 +313,7 @@ router igvrouter:
       loc = tr.path.findNextFeature(chrom, left, right)
       break
 
-    let headers = [(key:"Content-Type", value:"application/json")]
+    let headers = [(key:"Content-Type", val:"application/json")]
     if loc.chrom == "":
       var data = %* {
            "success": false
@@ -330,13 +345,13 @@ router igvrouter:
         if name == extractFileName(tr.indexUrl):
           file_path = tr.path & tr.index_ext
           let data = file_path.readFile
-          let headers = [(key:"Content-Type", value:"application/octet-stream")]
+          let headers = [(key:"Content-Type", val:"application/octet-stream")]
           resp(Http200, headers, data)
           return
     elif file_path != "" and "Range" notin request.headers.table and "range" notin request.headers.table:
       stderr.write_line "slurping file:", file_path
       let data = file_path.readFile
-      let headers = [(key:"Content-Type", value:"application/octet-stream")]
+      let headers = [(key:"Content-Type", val:"application/octet-stream")]
       resp(Http200, headers, data)
       return
 
@@ -350,7 +365,7 @@ router igvrouter:
     var path = request.matches[0]
     if path.endsWith(".fai"):
       let data = path.readFile
-      let headers = [(key:"Content-Type", value:"application/octet-stream")]
+      let headers = [(key:"Content-Type", val:"application/octet-stream")]
       resp(Http200, headers, data)
       return
 
