@@ -76,6 +76,7 @@ proc height(T:Track): int =
 
 proc format(T:Track): string =
   if T.path.split('#')[0].endsWith(".cram"):
+    if T.region != "": return "bam"
     return "cram"
   if T.path.split('#')[0].endsWith(".bam"):
     return "bam"
@@ -399,7 +400,12 @@ proc fill(templ:string, args:auto, tracks:var seq[Track], options:JsonNode, firs
       options["genome"] = % args.genome_build
 
   var options = %* {
-    "sessionURL": % encode($(options))
+    "showChromosomeWidget": false,
+    "search": false,
+    "sessionURL": % encode($(options)),
+    "showCursorTrackingGuide": true,
+    "showChromosomeWidget": false,
+    "queryParametersSupported": true,
   }
 
   var index_html = templ.replace("<OPTIONS>", pretty(options))
@@ -457,8 +463,6 @@ proc main() =
       tmpl = readFile(getEnv("JIGV_TEMPLATE"))
 
   let options = %* {
-      "showCursorTrackingGuide": true,
-      "showChromosomeWidget": false,
       "tracks": tracks,
       "queryParametersSupported": true,
     }

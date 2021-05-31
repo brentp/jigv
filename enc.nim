@@ -48,7 +48,6 @@ proc encode*(ibam:Bam, region:string): string =
     obam.write(aln)
 
   obam.close()
-
   result = prefix & base64.encode(path.readFile)
 
 proc encode*(ivcf:VCF, region:string): string =
@@ -86,7 +85,16 @@ proc encode*(ivcf:VCF, region:string): string =
 proc encode*(s:string): string =
   return prefix & base64.encode(compress(s))
 
-proc encode*(fai:Fai, region:string): string =
+proc expand(region:string, dist:int): string =
+  if dist == 0: return region
+  var chromse = region.split(":")
+  var se = chromse[1].split("-")
+  return &"{chromse[0]}:{max(0, parseInt(se[0]) - dist)}-{parseInt(se[1]) + dist}"
+
+proc encode*(fai:Fai, region:string, expand:int=10): string =
+
+  var region = region.expand(expand)
+
   var s:string
   try:
     s = fai.get(region)
@@ -120,8 +128,9 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
         let e = parseInt(toks[2])
         if e < start: continue
       clines.add(line)
-    var tmp = clines.join("\n") & "\n"
-    return prefix & base64.encode(compress(tmp))
+    clines.add("") # so we get a trailing newline
+    var tmp = clines.join("\n")
+    return prefix & base64.encode(compress(tmp, dataFormat=dfGzip, level=1))
 
   of TrackFileType.bed12:
 
