@@ -381,7 +381,7 @@ router igvrouter:
   get "/":
     resp index_html
 
-proc fill(templ:string, args:auto, tracks:var seq[Track], options:JsonNode, first_vcf_track_index:int) =
+proc fill(templ:string, args:auto, tracks:var seq[Track], options:JsonNode, first_vcf_track_index:int, flank=100) =
   # if we are here, then we are filling the template with each track with the
   # data urls.
   doAssert args.region != ""
@@ -399,16 +399,38 @@ proc fill(templ:string, args:auto, tracks:var seq[Track], options:JsonNode, firs
   else:
       options["genome"] = % args.genome_build
 
-  var options = %* {
+  var sessions = newSeq[string]()
+
+  var meta_options = %* {
     "showChromosomeWidget": false,
     "search": false,
-    "sessionURL": % encode($(options)),
+    #"sessionURL": % encode($(options)),
     "showCursorTrackingGuide": true,
     "showChromosomeWidget": false,
     "queryParametersSupported": true,
   }
 
-  var index_html = templ.replace("<OPTIONS>", pretty(options))
+  # TODO: loop over first_vcf_track and set region and write out sessionArray.
+  if first_vcf_track_index >= 0:
+    var ivcf:VCF
+    if not ivcf.open(tracks[first_vcf_track_index].path):
+      raise newException(IOError, &"[jigv] couldn't open vcf path {tracks[first_vcf_track_index].path}")
+    for v in ivcf:
+      if v.stop - v.start > 10000: continue
+      var locus = &"{v.CHROM}:{max(0, v.start-flank)}-{v.stop + flank}"
+      stderr.write_line locus
+      for tr in tracks.mitems:
+        tr.region = locus
+      options["reference"] = %* {"fastaURL": fa.encode(locus) }
+      options["tracks"] = %*tracks
+      options["locus"] = % locus
+      sessions.add(encode($options))
+      if sessions.len > 100:
+        break
+
+  meta_options["sessionURL"] = % sessions[0]
+  meta_options["sessions"] = %* sessions
+  var index_html = templ.replace("<OPTIONS>", pretty(meta_options))
   var js:string = args.js
   if js.endsWith(".js"): js = readFile(js)
   index_html = index_html.replace("<JIGV_CUSTOM_JS>", js)
@@ -453,7 +475,7 @@ proc main() =
   args.region = args.region.replace(",", "")
   if args.region == "" and first_vcf != -1:
     args.region = get_first_variant(tracks[first_vcf].path)
-    echo "set args.region to:", args.region
+    stderr.write_line "set args.region to:", args.region
 
   var tmpl = templ
   if getEnv("JIGV_TEMPLATE") != "":
