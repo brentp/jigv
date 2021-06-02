@@ -100,9 +100,11 @@
     </div>
 
     <script type="text/javascript">
-        let options = <OPTIONS>
+        let meta_options = <OPTIONS>
         let cache = []
         let browser
+
+        
 
         $("#previous-feature").click(function () {
             var e = jQuery.Event("keydown")
@@ -128,53 +130,22 @@
             if (direction == "") {
                 return
             }
-            // we use the server to go "right", to go "left", we use this cache history
-            if (direction == "left") {
-                if (cache.length == 0) { return }
-                browser.$searchInput.val(cache.pop())
-                browser.$searchInput.change()
-                return
-            }
-            cache.push(browser.$searchInput.val())
-            // if cache gets too long, we drop the first elements.
-            if (cache.length > 500) { cache.splice(0, 400) }
-
-            e.stopPropagation();
-            jQuery.getJSON("/nextfeature/", { locus: browser.$searchInput.val() }, function (resp) {
-                if (!resp.success) {
-                    console.log("error finding feature")
-                    return
-                }
-                browser.$searchInput.val(resp.position)
-                browser.$searchInput.change()
-            })
+            meta_options.index += direction == "left" ? -1 : 1
+            meta_options.index = Math.max(0, meta_options.index)
+            meta_options.index = Math.min(meta_options.sessions.length -1, meta_options.index)
+            browser.loadSession({url: meta_options.sessions[meta_options.index]})
         })
-
-        const check_for_features = () => {
-            $.getJSON("/nextfeature/", { locus: browser.$searchInput.val() })
-                .done(function (data) {
-                    if (data.success) {
-                        $("#vcf-features").toggleClass("d-none")
-                    }
-                })
-                .fail(function () {
-                    console.log(`nextfeature call failed (${browser.$searchInput.val()})`)
-                });
-        }
 
         $(document).ready(() => {
             // register tooltips
             $('[data-toggle="tooltip"]').tooltip()
 
             let div = document.getElementById("jigv")
-            if (location.hash.substr(1)) {
-                options.locus = location.hash.substr(1)
-            } else {
-                location.hash = options.locus
-            }
             // this is replaced and filled with any custom javascript from the user.
             <JIGV_CUSTOM_JS>
-            igv.createBrowser(div, options).then(function (b) {
+            meta_options.index = 0
+            meta_options["sessionURL"] = meta_options.sessions[meta_options.index];
+            igv.createBrowser(div, meta_options).then(function (b) {
                 browser = b;
                 browser.on('locuschange', function (referenceFrame) {
                     location.hash = referenceFrame.label
@@ -182,7 +153,6 @@
 
                 browser.on("trackclick", trackclick)
 
-                //check_for_features()
             })
         })
 

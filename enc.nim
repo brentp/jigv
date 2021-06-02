@@ -180,11 +180,23 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     var tmp = clines.join("\n") & "\n"
     return prefix & base64.encode(compress(tmp))
 
-iterator encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample], sample_i:int,
-                 anno_files:seq[string], note:string="", max_samples:int=5, flank:int=150): JsonNode =
-  let locus = &"{variant.CHROM}:{max(1, variant.start - flank)}-{variant.stop + flank}"
+proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample], sample_i:int,
+             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=120, single_locus:string=""): JsonNode =
+  # single_locus is used when we don't want to specify a vcf
+  # TODO: if region is too large, try multi-locus:
+  # https://igv.org/web/release/2.8.4/examples/multi-locus.html
+  # small locus is for the initial view.
+  var small_locus, locus: string
+  if variant == nil:
+    doAssert single_locus != "", "[jigv] expected single_locus to be specified since no variant was given"
+    small_locus = single_locus
+    locus = single_locus
+  else:
+    small_locus = &"{variant.CHROM}:{max(1, variant.start - 20)}-{variant.stop + 20}"
+    # locus how much data we pull (and how far user can zoom out).
+    locus = &"{variant.CHROM}:{max(1, variant.start - flank)}-{variant.stop + flank}"
   var json:JsonNode = %* {
-      "locus": locus,
+      "locus": small_locus,
       "reference": {"fastaURL": fasta.encode(locus) },
       "queryParametersSupported": true,
       "showChromosomeWidget": false,
@@ -192,8 +204,10 @@ iterator encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fa
 
   var tracks: seq[Track]
   # TODO: set n_tracks
-  var tr = Track(name:extractFileName(ivcf.fname), path:ivcf.encode(locus), n_tracks:2, file_type:FileType.VCF, region:locus)
-  tracks.add(tr)
+  # TODO: set name to genotype + GQ + AD
+  if ivcf != nil:
+    var tr = Track(name:extractFileName(ivcf.fname), path:ivcf.encode(locus), n_tracks:2, file_type:FileType.VCF, region:locus)
+    tracks.add(tr)
 
   for sample in samples:
     var ibam = bams[sample.id]
@@ -201,7 +215,7 @@ iterator encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fa
     tracks.add(tr)
 
   json["tracks"] = %* tracks
-  yield json
+  return json
 
 proc samplename(ibam:Bam): string =
   var found = initHashSet[string]()
@@ -216,11 +230,22 @@ proc samplename(ibam:Bam): string =
   doAssert found.len == 1, &"[jigv] found {found} sample names (SM read-group tags in bam header), expected exactly one."
 
 
+proc get_html(): string =
+  const templ = staticRead("jigv-template.html")
+  if getEnv("JIGV_TEMPLATE") != "":
+   if not existsFile(getEnv("JIGV_TEMPLATE")):
+     stderr.write_line "[jigv] template not found in value given in JIGV_TEMPLATE: {getEnv(\"JIGV_TEMPLATE\")}"
+   else:
+     result = readFile(getEnv("JIGV_TEMPLATE"))
+     return
+  return templ
+
+
 proc main*(args:seq[string]=commandLineParams()) =
 
   var p = newParser("samplename"):
     option("--sample", help="sample-id for proband or sample of interest (default is first vcf sample)")
-    option("--vcf", help="vcf containing variants of interest for --sample.")
+    option("--sites", help="VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.")
     # TODO: option("--js", help="custom javascript to load")
     option("--ped", help="pedigree file used to find relations for --sample")
     option("--fasta", help="path to indexed fasta file; required for cram files")
@@ -235,38 +260,46 @@ proc main*(args:seq[string]=commandLineParams()) =
       stderr.write_line p.help
       quit "specify at least 1 bam or cram file"
 
-    if opts.vcf == "":
+    if opts.sites == "":
       stderr.write_line p.help
-      quit "specify a vcf file"
+      quit "specify a vcf file to --sites"
 
     var bams: TableRef[string, Bam] = newTable[string, Bam]()
+    var firstbam:Bam
     for xam in opts.xams:
       var ibam:Bam
       if not ibam.open(xam, fai=opts.fasta, index=true):
         quit &"[jigv] couldnt open {xam}"
+      if bams.len == 0: firstbam = ibam
       bams[ibam.samplename] = ibam
 
     var ivcf:VCF
-    if not ivcf.open(opts.vcf):
-      quit &"[jigv] could not open {opts.vcf}"
-
     var samples:seq[Sample]
     var sample_i:int
-    if opts.ped == "":
-      if opts.sample != "":
-        samples = @[Sample(id: opts.sample, i:0)]
+
+    if ':' notin opts.sites:
+      if not ivcf.open(opts.sites):
+        quit &"[jigv] could not open {opts.sites}"
+
+      if opts.ped == "":
+        if opts.sample != "":
+          samples = @[Sample(id: opts.sample, i:0)]
+        else:
+          samples = @[Sample(id: ivcf.samples[0], i:0)]
+        sample_i = 0
+
       else:
-        samples = @[Sample(id: ivcf.samples[0], i:0)]
-      sample_i = 0
+        samples = parse_ped(opts.ped).match(ivcf)
+        sample_i = if opts.sample != "": ivcf.samples.find(opts.sample) else: 0
+        samples = samples.get_samples(sample_i, max_samples).match(ivcf)
+
+      var sample_ids: seq[string]
+      for s in samples: sample_ids.add(s.id)
+      ivcf.set_samples(sample_ids)
 
     else:
-      samples = parse_ped(opts.ped).match(ivcf)
-      sample_i = if opts.sample != "": ivcf.samples.find(opts.sample) else: 0
-      samples = samples.get_samples(sample_i, max_samples).match(ivcf)
-
-    var sample_ids: seq[string]
-    for s in samples: sample_ids.add(s.id)
-    ivcf.set_samples(sample_ids)
+      sample_i = 0
+      samples = @[Sample(id: firstbam.samplename, i:0)]
 
     var fa:Fai
     if opts.fasta != "":
@@ -274,11 +307,33 @@ proc main*(args:seq[string]=commandLineParams()) =
         quit &"[jigv] could not open {opts.fasta}"
 
     var ifiles: seq[string]
+    var sessions: seq[string]
 
-    for v in ivcf:
-      for tr in v.encode(ivcf, bams, fa, samples, sample_i, ifiles):
-        var s = ($tr).encode
-        stderr.write_line $(s.len)
+    if ivcf != nil:
+      for v in ivcf:
+        var tracks = v.encode(ivcf, bams, fa, samples, sample_i, ifiles)
+        var s = ($tracks).encode
+        sessions.add(s)
+        if sessions.len > 1000: break
+    else:
+      var v:Variant
+      var tracks = v.encode(ivcf, bams, fa, samples, sample_i, ifiles, single_locus=opts.sites)
+      var s = ($tracks).encode
+      sessions.add(s)
+
+    stderr.write_line "[jigv] writing html"
+    var meta_options = %* {
+      "showChromosomeWidget": false,
+      "search": false,
+      #"sessionURL": % encode($(options)),
+      "showCursorTrackingGuide": true,
+      "showChromosomeWidget": false,
+      "queryParametersSupported": true,
+    }
+    meta_options["sessions"] = %* sessions
+
+    var index_html = get_html().replace("<OPTIONS>", $(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
+    echo index_html
 
   except UsageError as e:
     stderr.write_line(p.help)
