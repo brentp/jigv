@@ -8,6 +8,7 @@ import pedfile
 import zippy
 import base64
 import os
+import tables
 import random
 import strutils
 import strformat
@@ -112,6 +113,30 @@ type TrackFileType* {.pure.} = enum
   bed
   bed12
 
+proc get_samples(samples:seq[Sample], sample_i:int, max_samples:int): seq[Sample] =
+  # given sample_i, get related samples to show in the plot
+  let sample = samples[sample_i]
+  result.add(sample)
+
+  if sample.dad != nil and sample.dad.i >= 0:
+    result.add(sample.dad)
+  if sample.mom != nil and sample.mom.i >= 0:
+    result.add(sample.mom)
+
+  # add kids:
+  for k in sample.kids:
+    if result.len < max_samples:
+      result.add(k)
+
+  # add siblings
+  if result.len > 1:
+    for k in sample.siblings:
+      if k.i >= 0 and k.i != sample.i and result.len < max_samples:
+        result.add(k)
+
+  # TODO: add unrelated samples.
+
+
 proc encode*(path:string, region:string, typ:TrackFileType): string =
 
   let chrom = stripChr(region.split(":")[0])
@@ -151,8 +176,8 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     var tmp = clines.join("\n") & "\n"
     return prefix & base64.encode(compress(tmp))
 
-iterator encode*(variant:Variant, ivcf:VCF, bams:seq[Bam], fasta:Fai, samples:seq[pedfile.Sample], sample_i:int,
-                 anno_files:seq[string], note:string="", n_backgrounds:int=0, flank:int=150): tuple[left:string, right:string] =
+iterator encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample], sample_i:int,
+                 anno_files:seq[string], note:string="", max_samples:int=5, flank:int=150): JsonNode =
   let locus = &"{variant.CHROM}:{max(1, variant.start - flank)}-{variant.stop + flank}"
   var json:JsonNode = %* {
       "locus": locus,
@@ -161,18 +186,24 @@ iterator encode*(variant:Variant, ivcf:VCF, bams:seq[Bam], fasta:Fai, samples:se
       "showChromosomeWidget": false,
     }
 
-  var sample = samples[sample_i]
+  var samples = get_samples(samples, sample_i, max_samples)
+
+  var sample_ids:seq[string]
+  for s in samples: sample_ids.add(s.id)
+  ivcf.set_samples(sample_ids)
 
   var tracks: seq[Track]
-  echo "fname:", ivcf.fname
   # TODO: set n_tracks
-  var tr = Track(name:extractFileName(ivcf.fname), path:ivcf.fname, n_tracks:2, file_type:FileType.VCF, region:locus)
-  var js = % tr
-  js["url"] = % ivcf.encode(locus)
-  echo js
-  yield ($js, "")
+  var tr = Track(name:extractFileName(ivcf.fname), path:ivcf.encode(locus), n_tracks:2, file_type:FileType.VCF, region:locus)
+  tracks.add(tr)
 
+  for sample in samples:
+    var ibam = bams[sample.id]
+    var tr = Track(name:sample.id, path: ibam.encode(locus), n_tracks:2, file_type:FileType.BAM, region:locus)
+    tracks.add(tr)
 
+  json["tracks"] = %* tracks
+  yield json
 
 
 when isMainModule:
@@ -202,11 +233,15 @@ when isMainModule:
   #
 
   #echo encode("/home/brentp/src/igv-reports/examples/variants/refGene.sort.bed.gz", "chr5:474969-475009", TrackFileType.bed12)
+  #
+  var bams = newTable[string, Bam]()
+  bams["HG002"] = ibam
 
   var ifiles:seq[string]
   for v in ivcf:
     if v.FILTER != "PASS": continue
-    for tr in v.encode(ivcf, @[ibam], fa, @[Sample(id:"HG002", i:0)], 0, ifiles):
-      discard
+    for tr in v.encode(ivcf, bams, fa, @[Sample(id:"HG002", i:0)], 0, ifiles):
+      echo tr
+    break
       #echo tr
 
