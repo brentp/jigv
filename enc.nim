@@ -9,10 +9,13 @@ import zippy
 import base64
 import os
 import tables
+import sets
 import random
 import strutils
+import pedfile
 import strformat
 import ./track
+import argparse
 
 randomize()
 
@@ -81,7 +84,8 @@ proc encode*(ivcf:VCF, region:string): string =
   doAssert ovcf.write_header
 
   for v in ivcf.query(region):
-    doAssert ovcf.write_variant(v)
+    v.c.rid = 0
+    doAssert ovcf.write_variant(v), $(region, $v)
 
   ovcf.close()
   result = prefix & base64.encode(path.readFile)
@@ -186,12 +190,6 @@ iterator encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fa
       "showChromosomeWidget": false,
     }
 
-  var samples = get_samples(samples, sample_i, max_samples)
-
-  var sample_ids:seq[string]
-  for s in samples: sample_ids.add(s.id)
-  ivcf.set_samples(sample_ids)
-
   var tracks: seq[Track]
   # TODO: set n_tracks
   var tr = Track(name:extractFileName(ivcf.fname), path:ivcf.encode(locus), n_tracks:2, file_type:FileType.VCF, region:locus)
@@ -205,43 +203,88 @@ iterator encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fa
   json["tracks"] = %* tracks
   yield json
 
+proc samplename(ibam:Bam): string =
+  var found = initHashSet[string]()
+  for l in ($ibam.hdr).split('\n'):
+    if not l.startswith("@RG"): continue
+    for t in l.split('\t'):
+      if t.startswith("SM:"):
+        var p = t.split(':')
+        if p[1] notin found:
+          result = p[1]
+          found.incl(p[1])
+  doAssert found.len == 1, &"[jigv] found {found} sample names (SM read-group tags in bam header), expected exactly one."
+
+
+proc main*(args:seq[string]=commandLineParams()) =
+
+  var p = newParser("samplename"):
+    option("--sample", help="sample-id for proband or sample of interest (default is first vcf sample)")
+    option("--vcf", help="vcf containing variants of interest for --sample.")
+    # TODO: option("--js", help="custom javascript to load")
+    option("--ped", help="pedigree file used to find relations for --sample")
+    option("--fasta", help="path to indexed fasta file; required for cram files")
+    arg("xams", nargs= -1, help="indexed bam or cram files for relevant samples. read-groups must match samples in vcf.")
+
+
+  const max_samples = 5
+  try:
+    var opts = p.parse(args)
+    if opts.help: quit 0
+    if opts.xams.len == 0:
+      stderr.write_line p.help
+      quit "specify at least 1 bam or cram file"
+
+    if opts.vcf == "":
+      stderr.write_line p.help
+      quit "specify a vcf file"
+
+    var bams: TableRef[string, Bam] = newTable[string, Bam]()
+    for xam in opts.xams:
+      var ibam:Bam
+      if not ibam.open(xam, fai=opts.fasta, index=true):
+        quit &"[jigv] couldnt open {xam}"
+      bams[ibam.samplename] = ibam
+
+    var ivcf:VCF
+    if not ivcf.open(opts.vcf):
+      quit &"[jigv] could not open {opts.vcf}"
+
+    var samples:seq[Sample]
+    var sample_i:int
+    if opts.ped == "":
+      if opts.sample != "":
+        samples = @[Sample(id: opts.sample, i:0)]
+      else:
+        samples = @[Sample(id: ivcf.samples[0], i:0)]
+      sample_i = 0
+
+    else:
+      samples = parse_ped(opts.ped).match(ivcf)
+      sample_i = if opts.sample != "": ivcf.samples.find(opts.sample) else: 0
+      samples = samples.get_samples(sample_i, max_samples).match(ivcf)
+
+    var sample_ids: seq[string]
+    for s in samples: sample_ids.add(s.id)
+    ivcf.set_samples(sample_ids)
+
+    var fa:Fai
+    if opts.fasta != "":
+      if not fa.open(opts.fasta):
+        quit &"[jigv] could not open {opts.fasta}"
+
+    var ifiles: seq[string]
+
+    for v in ivcf:
+      for tr in v.encode(ivcf, bams, fa, samples, sample_i, ifiles):
+        var s = ($tr).encode
+        stderr.write_line $(s.len)
+
+  except UsageError as e:
+    stderr.write_line(p.help)
+    stderr.write_line(getCurrentExceptionMsg())
+    quit(1)
+
 
 when isMainModule:
-  import pedfile
-
-  var ibam:Bam
-  if not ibam.open("/data/human/hg002.cram", fai="/data/human/g1k_v37_decoy.fa", index=true):
-    quit "could not open cram"
-
-  #echo encode(ibam, "1:22000000-22000900")
-
-  var ivcf:VCF
-  if not ivcf.open("/data/human/HG002_SVs_Tier1_v0.6.vcf.gz"):
-    quit "could not open vcf"
-
-  #echo encode(ivcf, "1:250000-3000000")
-
-  var fa:Fai
-  if not fa.open("/data/human/g1k_v37_decoy.fa"):
-    quit "could not open fai"
-
-
-  #echo fa.encode("chr5:474488-475489")
-  #
-
-  #echo encode("/home/brentp/src/igv-reports/examples/variants/cytoBandIdeo.txt", "chr5:474969-475009", TrackFileType.cytoband)
-  #
-
-  #echo encode("/home/brentp/src/igv-reports/examples/variants/refGene.sort.bed.gz", "chr5:474969-475009", TrackFileType.bed12)
-  #
-  var bams = newTable[string, Bam]()
-  bams["HG002"] = ibam
-
-  var ifiles:seq[string]
-  for v in ivcf:
-    if v.FILTER != "PASS": continue
-    for tr in v.encode(ivcf, bams, fa, @[Sample(id:"HG002", i:0)], 0, ifiles):
-      echo tr
-    break
-      #echo tr
-
+  main()
