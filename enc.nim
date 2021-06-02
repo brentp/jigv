@@ -1,14 +1,17 @@
 import hts/bam
 import hts/vcf
+import json
 import hts/fai
 import hts/bgzf/bgzi
 import hts/files
+import pedfile
 import zippy
 import base64
 import os
 import random
 import strutils
 import strformat
+import ./track
 
 randomize()
 
@@ -148,7 +151,32 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     var tmp = clines.join("\n") & "\n"
     return prefix & base64.encode(compress(tmp))
 
+iterator encode*(variant:Variant, ivcf:VCF, bams:seq[Bam], fasta:Fai, samples:seq[pedfile.Sample], sample_i:int,
+                 anno_files:seq[string], note:string="", n_backgrounds:int=0, flank:int=150): tuple[left:string, right:string] =
+  let locus = &"{variant.CHROM}:{max(1, variant.start - flank)}-{variant.stop + flank}"
+  var json:JsonNode = %* {
+      "locus": locus,
+      "reference": {"fastaURL": fasta.encode(locus) },
+      "queryParametersSupported": true,
+      "showChromosomeWidget": false,
+    }
+
+  var sample = samples[sample_i]
+
+  var tracks: seq[Track]
+  echo "fname:", ivcf.fname
+  # TODO: set n_tracks
+  var tr = Track(name:extractFileName(ivcf.fname), path:ivcf.fname, n_tracks:2, file_type:FileType.VCF, region:locus)
+  var js = % tr
+  js["url"] = % ivcf.encode(locus)
+  echo js
+  yield ($js, "")
+
+
+
+
 when isMainModule:
+  import pedfile
 
   var ibam:Bam
   if not ibam.open("/data/human/hg002.cram", fai="/data/human/g1k_v37_decoy.fa", index=true):
@@ -163,7 +191,7 @@ when isMainModule:
   #echo encode(ivcf, "1:250000-3000000")
 
   var fa:Fai
-  if not fa.open("/data/human/Homo_sapiens_assembly38.fasta"):
+  if not fa.open("/data/human/g1k_v37_decoy.fa"):
     quit "could not open fai"
 
 
@@ -173,4 +201,12 @@ when isMainModule:
   #echo encode("/home/brentp/src/igv-reports/examples/variants/cytoBandIdeo.txt", "chr5:474969-475009", TrackFileType.cytoband)
   #
 
-  echo encode("/home/brentp/src/igv-reports/examples/variants/refGene.sort.bed.gz", "chr5:474969-475009", TrackFileType.bed12)
+  #echo encode("/home/brentp/src/igv-reports/examples/variants/refGene.sort.bed.gz", "chr5:474969-475009", TrackFileType.bed12)
+
+  var ifiles:seq[string]
+  for v in ivcf:
+    if v.FILTER != "PASS": continue
+    for tr in v.encode(ivcf, @[ibam], fa, @[Sample(id:"HG002", i:0)], 0, ifiles):
+      discard
+      #echo tr
+

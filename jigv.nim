@@ -14,161 +14,10 @@ import hts/vcf
 import tables
 import json
 import ./enc
+import ./track
 
-type Track* = object
-  file_type: FileType
-  path*:string
-  name*: string
-  n_tracks*:int
-  reference*:string
-  # if region is specified, then we base64 encode the track, otherwise we
-  # use the server.
-  region:string
-
-var tracks*: seq[Track]
-var index_html: string
-
-proc isremote(path:string): bool =
-  result = path.startswith("http") or path.startswith("ftp:")
-
-proc file_type_ez(path:string): FileType =
-  if path.isremote:
-    if path.endswith(".bam"):
-      return FileType.BAM
-    elif path.endswith(".cram"):
-      return FileType.CRAM
-    elif path.endswith(".vcf") or path.endswith(".vcf.gz"):
-      return FileType.VCF
-
-    return FileType.UNKNOWN
-
-  else:
-    return path.file_type
-
-proc get_type(T:Track): string =
-  if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
-    return "alignment"
-  case T.file_type
-  of FileType.CRAM, FileType.BAM:
-    return "alignment"
-  of FileType.VCF, FileType.BCF:
-    return "variant"
-  else:
-    if T.path.endsWith(".bed") or T.path.endsWith(".bed.gz") or T.path.endsWith(".bedgraph"):
-      return "annotation"
-    if T.path.endsWith(".bw") or T.path.endsWith(".wig") or T.path.toLowerAscii.endswith(".bigwig"):
-      return "wig"
-    raise newException(ValueError, "unknown file type for " & $T.file_type)
-
-proc height(T:Track): int =
-  var mult = 1
-  if T.n_tracks < 3:
-    mult = 2
-  if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
-    return 250 * mult
-  case T.file_type
-  of FileType.CRAM, FileType.BAM:
-    return 250 * mult
-  of FileType.VCF, FileType.BCF:
-    return 60
-  else:
-    return 50
-
-proc format(T:Track): string =
-  if T.path.split('#')[0].endsWith(".cram"):
-    if T.region != "": return "bam"
-    return "cram"
-  if T.path.split('#')[0].endsWith(".bam"):
-    return "bam"
-  case T.file_type
-  of FileType.CRAM, FileType.BAM:
-    return ($T.file_type).toLowerAscii
-  of FileType.VCF, FileType.BCF:
-    return "vcf"
-  else:
-    if T.path.split('#')[0].endsWith(".bed") or T.path.split('#')[0].endsWith(".bed.gz") or T.path.split('#')[0].endsWith(".bedgraph"):
-      return "bed"
-    if T.path.split('#')[0].endsWith(".bw") or T.path.split('#')[0].endsWith(".wig") or T.path.split('#')[0].toLowerAscii.endswith(".bigwig"):
-      return "wig"
-    raise newException(ValueError, "unknown format for " & $T.file_type)
-
-proc url(t:Track): string =
-  if t.path.isremote:
-    return t.path
-  result = &"/data/tracks/{extractFileName(t.path)}"
-
-proc dataurl(t:Track): string =
-
-  # region is the swithc. if we have it, we use it and encode
-  # otherwise, we rely on the server
-  if t.region == "": return t.url
-
-  case t.format
-  of "bam", "cram":
-    var ibam:Bam
-    if not ibam.open(t.path, fai=t.reference, index=true):
-      quit &"couldnt open bam/cram file {t.path} with reference {t.reference}"
-    result = ibam.encode(t.region)
-    ibam.close()
-  of "vcf", "bcf":
-    var ivcf:VCF
-    if not ivcf.open(t.path):
-      quit &"couldnt open vcf/bcf file: {t.path}"
-    result = ivcf.encode(t.region)
-    ivcf.close()
-  of "bed":
-    # TODO: check for index and use bed12
-    result = t.path.encode(t.region, TrackFileType.bed)
-
-  else:
-    return t.url
-
-proc index_ext*(t:Track): string =
-  if t.path.isremote:
-    case splitFile(t.path).ext
-    of ".bam": return ".bai"
-    of ".cram": return ".crai"
-    of ".vcf.gz", "bed.gz": return ".tbi"
-
-  case t.file_type
-  of FileType.CRAM:
-    result = ".crai"
-  of FileType.BAM:
-    result = ".bai"
-  of FileType.VCF:
-    result = ".tbi"
-  else:
-    if t.path.endsWith(".bed.gz"):
-      return ".tbi"
-    raise newException(ValueError, "unsupported file type:" & $t.file_type)
-
-proc indexUrl(t:Track): string =
-  result = t.url & t.index_ext
-
-proc `$`*(T:Track): string =
-  result = &"""{{
-  type: "{T.get_type}", format: "{T.format}",
-  url: "{T.dataurl}","""
-  if T.region == "":
-    try:
-      result &= &"""
-    indexURL: "{T.indexUrl}","""
-    except ValueError:
-      discard
-
-  if T.height != 0:
-    result &= &"\n  \"height\": {T.height},"
-  if T.file_type in  {FileType.CRAM, FileType.BAM}:
-    result &= """
-   alignmentRowHeight: 8,
-   colorBy: "strand",
-   coverageTrackHeight: 24,
-   showSoftClips: true,
-   viewAsPairs: true,"""
-  elif T.file_type == FileType.VCF:
-    result &= """
-    visibilityWindow: 200000,"""
-  result &= "\n}"
+var igvtracks*: seq[Track]
+var index_html:string
 
 proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tuple[key: string, val: string]], string) =
     ## the fasta request doesn't match the bam request so we use `extra_bytes` to
@@ -199,31 +48,6 @@ proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tup
 
     return (headers, data)
 
-proc `%`*(T:Track): JsonNode =
-
-  var fields = initOrderedTable[string, JsonNode](4)
-  fields["type"] = % T.get_type
-  if T.format != "wig":
-    fields["format"] = % T.format
-  fields["url"] = % T.dataurl
-  if T.region == "":
-    try:
-      fields["indexURL"] = % T.indexUrl
-    except ValueError:
-      discard
-
-  if fields["type"] == % "annotation":
-    fields["displayMode"] = % "SQUISHED"
-  fields["name"] = % T.name
-  if T.height != 0:
-    fields["height"] = % T.height
-  if T.file_type in  {FileType.CRAM, FileType.BAM}:
-    fields["alignmentRowHeight"] = % 8
-    fields["colorBy"] = % "strand"
-    fields["coverageTrackHeight"] = % 24
-    fields["showSoftClips"] = % true
-    fields["viewAsPairs"] = % true
-  return JsonNode(kind: JObject, fields: fields)
 
 type region = tuple[chrom:string, start:int, stop:int]
 
@@ -309,7 +133,7 @@ router igvrouter:
       if se.len > 1:
         right = parseInt(se[1])
     var loc: region
-    for tr in tracks:
+    for tr in igvtracks:
       if not tr.path.endsWith(".vcf.gz"): continue
       loc = tr.path.findNextFeature(chrom, left, right)
       break
@@ -333,7 +157,7 @@ router igvrouter:
     let name = extractFileName(@"name")
     var file_path: string
     var tr: Track
-    for otr in tracks:
+    for otr in igvtracks:
       if name == extractFileName(otr.path):
         tr = otr
         file_path = tr.path
@@ -342,7 +166,7 @@ router igvrouter:
       resp(Http404)
     elif file_path == "":
       # requesting index or other full file
-      for tr in tracks:
+      for tr in igvtracks:
         if name == extractFileName(tr.indexUrl):
           file_path = tr.path & tr.index_ext
           let data = file_path.readFile
@@ -410,7 +234,6 @@ proc fill(templ:string, args:auto, tracks:var seq[Track], options:JsonNode, firs
     "queryParametersSupported": true,
   }
 
-  # TODO: loop over first_vcf_track and set region and write out sessionArray.
   if first_vcf_track_index >= 0:
     var ivcf:VCF
     if not ivcf.open(tracks[first_vcf_track_index].path):
@@ -470,11 +293,11 @@ proc main() =
       first_vcf = i
 
 
-    tracks.add(tr)
+    igvtracks.add(tr)
 
   args.region = args.region.replace(",", "")
   if args.region == "" and first_vcf != -1:
-    args.region = get_first_variant(tracks[first_vcf].path)
+    args.region = get_first_variant(igvtracks[first_vcf].path)
     stderr.write_line "set args.region to:", args.region
 
   var tmpl = templ
@@ -485,12 +308,12 @@ proc main() =
       tmpl = readFile(getEnv("JIGV_TEMPLATE"))
 
   let options = %* {
-      "tracks": tracks,
+      "tracks": igvtracks,
       "queryParametersSupported": true,
     }
 
   if args.port == "":
-    tmpl.fill(args, tracks, options, first_vcf)
+    tmpl.fill(args, igvtracks, options, first_vcf)
 
   else:
 
