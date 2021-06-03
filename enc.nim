@@ -183,12 +183,12 @@ proc get_display_name(v:Variant): string =
   var r = v.REF
   const max_len = 12
   if len(r) > max_len:
-    r = r[0..<int(max_len/2)] & &".." & r[^int(max_len/2)..< ^0]
+    r = r[0 ..< int(max_len/2)] & &".." & r[^int(max_len/2) ..< ^0]
   var alts:seq[string]
   for a in v.ALT:
     var a = a
     if len(a) > max_len:
-      a = a[0..<int(max_len/2)] & &".." & a[^int(max_len/2)..< ^0]
+      a = a[0 ..< int(max_len/2)] & &".." & a[^int(max_len/2) ..< ^0]
     alts.add(a)
 
   result = &"{v.CHROM}:{v.start + 1}({r}/{alts.join(\",\")})"
@@ -222,12 +222,11 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
   var GTs: Genotypes
   var GQs: seq[int32]
 
-  # TODO: set name to genotype + GQ + AD
   if ivcf != nil:
     let variant_name = variant.get_display_name
     var fname = ivcf.fname.splitFile.name
     if fname.endsWith(".vcf") or fname.endsWith(".bcf"):
-      fname = fname[0..< ^4]
+      fname = fname[0 ..< ^4]
 
     var tr = Track(name:fname & "<br>" & variant_name , path:ivcf.encode(locus), n_tracks:n_tracks, file_type:FileType.VCF, region:locus)
     tracks.add(tr)
@@ -239,6 +238,8 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     var name = sample.id
     if GTs.len > 0:
       name &= &" GT: <b>{GTs[sample.i]}</b>"
+    if GQs.len > 0:
+      name &= &" GQ: <b>{GQs[sample.i]}</b>"
 
     var tr = Track(name:name, path: ibam.encode(locus), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
     tracks.add(tr)
