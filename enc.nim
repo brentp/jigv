@@ -47,9 +47,9 @@ proc encode*(ibam:Bam, region:string): string =
   obam.write_header(ibam.hdr)
 
   # handle chr prefix stuff
-  var chrom = region.split(':')[0]
-  chrom = check_chrom(ibam.hdr.targets, chrom)
-  var region = &"{chrom}:{region.split(':')[1]}"
+  let chromse = region.split(':')
+  let chrom = check_chrom(ibam.hdr.targets, chromse[0])
+  var region = &"{chrom}:{chromse[1]}"
 
   for aln in ibam.query(region):
     obam.write(aln)
@@ -144,7 +144,6 @@ proc get_samples(samples:seq[Sample], sample_i:int, max_samples:int): seq[Sample
         result.add(k)
   # TODO: add unrelated samples.
 
-
 proc encode*(path:string, region:string, typ:TrackFileType): string =
 
   let chrom = stripChr(region.split(":")[0])
@@ -198,10 +197,11 @@ proc get_display_name(v:Variant): string =
 
   result = &"{v.CHROM}:{v.start + 1}({r}/{alts.join(\",\")})"
 
-proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample], sample_i:int,
+proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
              anno_files:seq[string], note:string="", max_samples:int=5, flank:int=120, single_locus:string=""): JsonNode =
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
+  # TODO: handle anno_files
   # https://igv.org/web/release/2.8.4/examples/multi-locus.html
   # small locus is for the initial view.
   var small_locus, locus: string
@@ -213,6 +213,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     small_locus = &"{variant.CHROM}:{max(1, variant.start - 20)}-{variant.stop + 20}"
     # locus how much data we pull (and how far user can zoom out).
     locus = &"{variant.CHROM}:{max(1, variant.start - flank)}-{variant.stop + flank}"
+  stderr.write_line "locus:", locus
   var json:JsonNode = %* {
       "locus": small_locus,
       "reference": {"fastaURL": fasta.encode(locus) },
@@ -350,9 +351,15 @@ proc main*(args:seq[string]=commandLineParams()) =
     var ifiles: seq[string]
     var sessions: seq[string]
 
+    if sample_i != 0:
+      swap(samples[0], samples[sample_i])
+      sample_i = 0
+
+
+
     if ivcf != nil:
       for v in ivcf:
-        var tracks = v.encode(ivcf, bams, fa, samples, sample_i, ifiles)
+        var tracks = v.encode(ivcf, bams, fa, samples, ifiles)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
         var s = ($tracks).encode
@@ -360,7 +367,7 @@ proc main*(args:seq[string]=commandLineParams()) =
         if sessions.len > 100: break
     else:
       var v:Variant
-      var tracks = v.encode(ivcf, bams, fa, samples, sample_i, ifiles, single_locus=opts.sites)
+      var tracks = v.encode(ivcf, bams, fa, samples, ifiles, single_locus=opts.sites)
       if opts.genome_build != "":
         tracks["genome"] = % opts.genome_build
       var s = ($tracks).encode
