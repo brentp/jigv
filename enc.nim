@@ -247,6 +247,7 @@ proc main*(args:seq[string]=commandLineParams()) =
     option("--sample", help="sample-id for proband or sample of interest (default is first vcf sample)")
     option("--sites", help="VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.")
     # TODO: option("--js", help="custom javascript to load")
+    option("-g", "--genome-build", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json). with this gene models will be drawn")
     option("--ped", help="pedigree file used to find relations for --sample")
     option("--fasta", help="path to indexed fasta file; required for cram files")
     arg("xams", nargs= -1, help="indexed bam or cram files for relevant samples. read-groups must match samples in vcf.")
@@ -321,7 +322,8 @@ proc main*(args:seq[string]=commandLineParams()) =
       var s = ($tracks).encode
       sessions.add(s)
 
-    stderr.write_line "[jigv] writing html"
+    stderr.write_line opts.genome_build
+    stderr.write_line &"[jigv] writing {sessions.len} regions to html"
     var meta_options = %* {
       "showChromosomeWidget": false,
       "search": false,
@@ -331,6 +333,8 @@ proc main*(args:seq[string]=commandLineParams()) =
       "queryParametersSupported": true,
     }
     meta_options["sessions"] = %* sessions
+    if opts.genome_build != "":
+      meta_options["genome"] = % opts.genome_build
 
     var index_html = get_html().replace("<OPTIONS>", $(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
     echo index_html
