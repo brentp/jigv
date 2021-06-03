@@ -79,7 +79,6 @@ proc encode*(ivcf:VCF, region:string): string =
   var h:vcf.Header
   h.from_string(new_header.join("\n"))
 
-  # TODO: can drop contig lines from header.
   ovcf.copy_header(h)
   doAssert ovcf.write_header
 
@@ -180,6 +179,20 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     var tmp = clines.join("\n") & "\n"
     return prefix & base64.encode(compress(tmp))
 
+proc get_display_name(v:Variant): string =
+  var r = v.REF
+  const max_len = 12
+  if len(r) > max_len:
+    r = r[0..<int(max_len/2)] & &".." & r[^int(max_len/2)..< ^0]
+  var alts:seq[string]
+  for a in v.ALT:
+    var a = a
+    if len(a) > max_len:
+      a = a[0..<int(max_len/2)] & &".." & a[^int(max_len/2)..< ^0]
+    alts.add(a)
+
+  result = &"{v.CHROM}:{v.start + 1}({r}/{alts.join(\",\")})"
+
 proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample], sample_i:int,
              anno_files:seq[string], note:string="", max_samples:int=5, flank:int=120, single_locus:string=""): JsonNode =
   # single_locus is used when we don't want to specify a vcf
@@ -203,15 +216,31 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     }
 
   var tracks: seq[Track]
-  # TODO: set n_tracks
+  let n_tracks = samples.len
+
+  var x: seq[int32]
+  var GTs: Genotypes
+  var GQs: seq[int32]
+
   # TODO: set name to genotype + GQ + AD
   if ivcf != nil:
-    var tr = Track(name:extractFileName(ivcf.fname), path:ivcf.encode(locus), n_tracks:2, file_type:FileType.VCF, region:locus)
+    let variant_name = variant.get_display_name
+    var fname = ivcf.fname.splitFile.name
+    if fname.endsWith(".vcf") or fname.endsWith(".bcf"):
+      fname = fname[0..< ^4]
+
+    var tr = Track(name:fname & "<br>" & variant_name , path:ivcf.encode(locus), n_tracks:n_tracks, file_type:FileType.VCF, region:locus)
     tracks.add(tr)
+    GTs = variant.format.genotypes(x)
+    discard variant.format.get("GQ", GQs)
 
   for sample in samples:
     var ibam = bams[sample.id]
-    var tr = Track(name:sample.id, path: ibam.encode(locus), n_tracks:2, file_type:FileType.BAM, region:locus)
+    var name = sample.id
+    if GTs.len > 0:
+      name &= &" GT: <b>{GTs[sample.i]}</b>"
+
+    var tr = Track(name:name, path: ibam.encode(locus), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
     tracks.add(tr)
 
   json["tracks"] = %* tracks
