@@ -119,24 +119,29 @@ type TrackFileType* {.pure.} = enum
 proc get_samples(samples:seq[Sample], sample_i:int, max_samples:int): seq[Sample] =
   # given sample_i, get related samples to show in the plot
   let sample = samples[sample_i]
+  sample.extra.add(Pair(key: "label", val: sample.id))
   result.add(sample)
 
-  if sample.dad != nil and sample.dad.i >= 0:
-    result.add(sample.dad)
-  if sample.mom != nil and sample.mom.i >= 0:
-    result.add(sample.mom)
+  for (lbl, parent) in [("dad", sample.dad), ("mom", sample.mom)]:
+    if parent == nil: continue
+    var aff = if parent.affected: "(affected)" else: ""
+    parent.extra.add(Pair(key: "label", val: &"{lbl}:{parent.id}{aff}"))
+    result.add(parent)
 
   # add kids:
   for k in sample.kids:
     if result.len < max_samples:
+      var aff = if k.affected: "(affected)" else: ""
+      k.extra.add(Pair(key: "label", val: &"offspring:{k.id}{aff}"))
       result.add(k)
 
   # add siblings
   if result.len > 1:
     for k in sample.siblings:
       if k.i >= 0 and k.i != sample.i and result.len < max_samples:
+        var aff = if k.affected: "(affected)" else: ""
+        k.extra.add(Pair(key: "label", val: &"sibling:{k.id}{aff}"))
         result.add(k)
-
   # TODO: add unrelated samples.
 
 
@@ -235,7 +240,11 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
 
   for sample in samples:
     var ibam = bams[sample.id]
-    var name = sample.id
+    var name: string
+    try:
+        name = sample["label"]
+    except:
+        name = sample.id
     if GTs.len > 0:
       name &= &" GT: <b>{GTs[sample.i]}</b>"
     if GQs.len > 0:
