@@ -98,7 +98,7 @@ proc expand(region:string, dist:int): string =
   var se = chromse[1].split("-")
   return &"{chromse[0]}:{max(0, parseInt(se[0]) - dist)}-{parseInt(se[1]) + dist}"
 
-proc encode*(fai:Fai, region:string, expand:int=10): string =
+proc encode*(fai:Fai, region:string, expand:int=20): string =
 
   var region = region.expand(expand)
 
@@ -115,6 +115,7 @@ type TrackFileType* {.pure.} = enum
   cytoband
   bed
   bed12
+  indexed
 
 proc get_samples(samples:seq[Sample], sample_i:int, max_samples:int): seq[Sample] =
   # given sample_i, get related samples to show in the plot
@@ -151,7 +152,7 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
   let stop =  parseInt(region.split(":")[1].split("-")[1])
 
   case typ
-  of TrackFileType.cytoband, TrackFileType.bed:
+  of TrackFileType.cytoband, TrackFileType.bed, TrackFileType.bed12:
     var clines: seq[string]
     for line in path.hts_lines:
       var toks = line.split("\t")
@@ -167,7 +168,7 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     var tmp = clines.join("\n")
     return prefix & base64.encode(compress(tmp, dataFormat=dfGzip, level=1))
 
-  of TrackFileType.bed12:
+  of TrackFileType.indexed:
 
     var bgz:BGZI
     if not bgz.open(path):
@@ -178,6 +179,12 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     var start = parseInt(chromstuff[1].split('-')[0])
     var stop = parseInt(chromstuff[1].split('-')[1])
     var clines:seq[string]
+    # linear search...
+    if chromstuff[0] notin bgz.csi.chroms:
+      if not chromstuff[0].startswith("chr"):
+        chromstuff[0] = "chr" & chromstuff[0]
+      elif len(chromstuff[0]) > 3:
+        chromstuff[0] = chromstuff[0][3..<chromstuff[0].len]
     for l in bgz.query(chromstuff[0], start - 1, stop):
       clines.add(l)
     var tmp = clines.join("\n") & "\n"
@@ -198,10 +205,13 @@ proc get_display_name(v:Variant): string =
   result = &"{v.CHROM}:{v.start + 1}({r}/{alts.join(\",\")})"
 
 proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
+             cytoband:string="",
              anno_files:seq[string], note:string="", max_samples:int=5, flank:int=120, single_locus:string=""): JsonNode =
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
   # TODO: handle anno_files
+  # TODO: handle slivar fields e.g. show that the variant is de novo or
+  # compound-het
   # https://igv.org/web/release/2.8.4/examples/multi-locus.html
   # small locus is for the initial view.
   var small_locus, locus: string
@@ -216,11 +226,15 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
   stderr.write_line "locus:", locus
   var json:JsonNode = %* {
       "locus": small_locus,
-      "reference": {"fastaURL": fasta.encode(locus) },
-      "queryParametersSupported": true,
-      "showChromosomeWidget": false,
-      "sampleNameViewportWidth": 512,
+      #"search": true,
+      #"queryParametersSupported": true,
+      #"showChromosomeWidget": false,
+      #"sampleNameViewportWidth": 512,
     }
+  if fasta != nil:
+    json["reference"] = %* {"fastaURL": fasta.encode(locus) }
+  if cytoband != "":
+    json["reference"]["cytobandURL"] = % cytoband.encode(locus, TrackFileType.cytoband)
 
   var tracks: seq[Track]
   let n_tracks = samples.len
@@ -255,6 +269,11 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     var tr = Track(name:name, path: ibam.encode(locus), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
     tracks.add(tr)
 
+  for a in anno_files:
+    let ft = if a.endswith(".vcf") or a.endswith(".vcf.gz") or a.endswith(".bcf"): FileType.VCF else: FileType.BED
+    var tr = Track(name: extractFileName(a), path:a.encode(locus, TrackFileType.indexed), file_type: ft, region:locus)
+    tracks.add(tr)
+
   json["tracks"] = %* tracks
   return json
 
@@ -274,7 +293,7 @@ proc samplename(ibam:Bam): string =
 proc get_html(): string =
   const templ = staticRead("jigv-template.html")
   if getEnv("JIGV_TEMPLATE") != "":
-   if not existsFile(getEnv("JIGV_TEMPLATE")):
+   if not fileExists(getEnv("JIGV_TEMPLATE")):
      stderr.write_line "[jigv] template not found in value given in JIGV_TEMPLATE: {getEnv(\"JIGV_TEMPLATE\")}"
    else:
      result = readFile(getEnv("JIGV_TEMPLATE"))
@@ -288,11 +307,12 @@ proc main*(args:seq[string]=commandLineParams()) =
     option("--sample", help="sample-id for proband or sample of interest (default is first vcf sample)")
     option("--sites", help="VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.")
     # TODO: option("--js", help="custom javascript to load")
-    option("-g", "--genome-build", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json). with this gene models will be drawn")
+    option("-g", "--genome-build", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json).  If this is specified then the page will request fasta, ideogram and gene data from a server.")
+    option("--cytoband", help="optional path to cytoband/ideogram file")
+    option("--annotation", help="path to additional bed or vcf file to be added as a track; may be specified multiple times", multiple=true)
     option("--ped", help="pedigree file used to find relations for --sample")
     option("--fasta", help="path to indexed fasta file; required for cram files")
     arg("xams", nargs= -1, help="indexed bam or cram files for relevant samples. read-groups must match samples in vcf.")
-
 
   const max_samples = 5
   try:
@@ -305,6 +325,10 @@ proc main*(args:seq[string]=commandLineParams()) =
     if opts.sites == "":
       stderr.write_line p.help
       quit "specify a vcf file to --sites"
+
+    if opts.genome_build != "" and opts.cytoband != "":
+      stderr.write_line "[jigv] warning: when -g/--genome-build is specified the cytoband argument is not used"
+      opts.cytoband = ""
 
     var bams: TableRef[string, Bam] = newTable[string, Bam]()
     var firstbam:Bam
@@ -344,11 +368,11 @@ proc main*(args:seq[string]=commandLineParams()) =
       samples = @[Sample(id: firstbam.samplename, i:0)]
 
     var fa:Fai
-    if opts.fasta != "":
+    if opts.fasta != "" and opts.genome_build == "":
       if not fa.open(opts.fasta):
         quit &"[jigv] could not open {opts.fasta}"
 
-    var ifiles: seq[string]
+    var ifiles: seq[string] = opts.annotation
     var sessions: seq[string]
 
     if sample_i != 0:
@@ -356,10 +380,9 @@ proc main*(args:seq[string]=commandLineParams()) =
       sample_i = 0
 
 
-
     if ivcf != nil:
       for v in ivcf:
-        var tracks = v.encode(ivcf, bams, fa, samples, ifiles)
+        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
         var s = ($tracks).encode
@@ -367,7 +390,7 @@ proc main*(args:seq[string]=commandLineParams()) =
         if sessions.len > 100: break
     else:
       var v:Variant
-      var tracks = v.encode(ivcf, bams, fa, samples, ifiles, single_locus=opts.sites)
+      var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=opts.sites)
       if opts.genome_build != "":
         tracks["genome"] = % opts.genome_build
       var s = ($tracks).encode
@@ -377,7 +400,7 @@ proc main*(args:seq[string]=commandLineParams()) =
     stderr.write_line &"[jigv] writing {sessions.len} regions to html"
     var meta_options = %* {
       "showChromosomeWidget": false,
-      "search": false,
+      "search": true,
       #"sessionURL": % encode($(options)),
       "showCursorTrackingGuide": true,
       "showChromosomeWidget": false,
@@ -385,7 +408,7 @@ proc main*(args:seq[string]=commandLineParams()) =
     }
     meta_options["sessions"] = %* sessions
 
-    var index_html = get_html().replace("<OPTIONS>", $(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
+    var index_html = get_html().replace("<OPTIONS>", pretty(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
     echo index_html
 
   except UsageError as e:

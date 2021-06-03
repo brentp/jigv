@@ -41,6 +41,8 @@ proc get_type*(T:Track): string =
     return "alignment"
   of FileType.VCF, FileType.BCF:
     return "variant"
+  of FileType.BED:
+    return "annotation"
   else:
     if T.path.endsWith(".bed") or T.path.endsWith(".bed.gz") or T.path.endsWith(".bedgraph"):
       return "annotation"
@@ -73,6 +75,8 @@ proc format*(T:Track): string =
     return ($T.file_type).toLowerAscii
   of FileType.VCF, FileType.BCF:
     return "vcf"
+  of FileType.BED:
+    return "annotation"
   else:
     if T.path.split('#')[0].endsWith(".bed") or T.path.split('#')[0].endsWith(".bed.gz") or T.path.split('#')[0].endsWith(".bedgraph"):
       return "bed"
