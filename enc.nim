@@ -218,6 +218,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
       "reference": {"fastaURL": fasta.encode(locus) },
       "queryParametersSupported": true,
       "showChromosomeWidget": false,
+      "sampleNameViewportWidth": 512,
     }
 
   var tracks: seq[Track]

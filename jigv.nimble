@@ -1,4 +1,4 @@
-version       = "0.0.8"
+version       = "0.1.0"
 author        = "Brent Pedersen"
 description   = "igv.js server"
 license       = "MIT"
@@ -6,8 +6,8 @@ license       = "MIT"
 
 # Dependencies
 
-requires "hts >= 0.3.4", "jester"
-requires "argparse >= 0.7.0"
+requires "hts >= 0.3.16", "https://github.com/brentp/pedfile >= 0.0.3"
+requires "argparse == 0.10.1"
 installExt = @["nim"]
 
 skipDirs = @["tests"]
