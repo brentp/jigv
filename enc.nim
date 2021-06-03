@@ -313,12 +313,16 @@ proc main*(args:seq[string]=commandLineParams()) =
     if ivcf != nil:
       for v in ivcf:
         var tracks = v.encode(ivcf, bams, fa, samples, sample_i, ifiles)
+        if opts.genome_build != "":
+          tracks["genome"] = % opts.genome_build
         var s = ($tracks).encode
         sessions.add(s)
-        if sessions.len > 1000: break
+        if sessions.len > 100: break
     else:
       var v:Variant
       var tracks = v.encode(ivcf, bams, fa, samples, sample_i, ifiles, single_locus=opts.sites)
+      if opts.genome_build != "":
+        tracks["genome"] = % opts.genome_build
       var s = ($tracks).encode
       sessions.add(s)
 
@@ -333,8 +337,6 @@ proc main*(args:seq[string]=commandLineParams()) =
       "queryParametersSupported": true,
     }
     meta_options["sessions"] = %* sessions
-    if opts.genome_build != "":
-      meta_options["genome"] = % opts.genome_build
 
     var index_html = get_html().replace("<OPTIONS>", $(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
     echo index_html
