@@ -142,6 +142,9 @@
             jQuery('[data-toggle="tooltip"]').tooltip()
 
             let div = document.getElementById("jigv")
+            if(meta_options.sessions.length > 1) {
+                jQuery('#vcf-features').removeClass('d-none')
+            }
             // this is replaced and filled with any custom javascript from the user.
             <JIGV_CUSTOM_JS>
             meta_options.index = 0
