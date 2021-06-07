@@ -19,20 +19,6 @@ type Track* = object
 proc isremote*(path:string): bool =
   result = path.startswith("http") or path.startswith("ftp:")
 
-proc file_type_ez*(path:string): FileType =
-  if path.isremote:
-    if path.endswith(".bam"):
-      return FileType.BAM
-    elif path.endswith(".cram"):
-      return FileType.CRAM
-    elif path.endswith(".vcf") or path.endswith(".vcf.gz"):
-      return FileType.VCF
-
-    return FileType.UNKNOWN
-
-  else:
-    return path.file_type
-
 proc get_type*(T:Track): string =
   if T.path.endsWith(".cram") or T.path.endsWith(".bam"):
     return "alignment"
@@ -48,6 +34,10 @@ proc get_type*(T:Track): string =
       return "annotation"
     if T.path.endsWith(".bw") or T.path.endsWith(".wig") or T.path.toLowerAscii.endswith(".bigwig"):
       return "wig"
+    for ext in ["gff", "gff3", "gff3.gz", "gff.gz", "gtf", "gtf.gz"]:
+      if T.path.endsWith("." & ext):
+        return "annotation"
+
     raise newException(ValueError, "unknown file type for " & $T.file_type)
 
 proc height*(T:Track): int =
@@ -70,6 +60,19 @@ proc format*(T:Track): string =
     return "cram"
   if T.path.split('#')[0].endsWith(".bam"):
     return "bam"
+  if T.path.split('#')[0].endsWith(".bed") or T.path.split('#')[0].endsWith(".bed.gz") or T.path.split('#')[0].endsWith(".bedgraph"):
+    return "bed"
+  if T.path.split('#')[0].endsWith(".bw") or T.path.split('#')[0].endsWith(".wig") or T.path.split('#')[0].toLowerAscii.endswith(".bigwig"):
+    return "wig"
+
+  for ext in ["gtf", "gtf.gz"]:
+    if T.path.endsWith("." & ext):
+      return "gtf"
+
+  for ext in ["gff", "gff.gz", "gff3", "gff3.gz"]:
+    if T.path.endsWith("." & ext):
+      return "gff"
+
   case T.file_type
   of FileType.CRAM, FileType.BAM:
     return ($T.file_type).toLowerAscii
@@ -78,10 +81,6 @@ proc format*(T:Track): string =
   of FileType.BED:
     return "annotation"
   else:
-    if T.path.split('#')[0].endsWith(".bed") or T.path.split('#')[0].endsWith(".bed.gz") or T.path.split('#')[0].endsWith(".bedgraph"):
-      return "bed"
-    if T.path.split('#')[0].endsWith(".bw") or T.path.split('#')[0].endsWith(".wig") or T.path.split('#')[0].toLowerAscii.endswith(".bigwig"):
-      return "wig"
     raise newException(ValueError, "unknown format for " & $T.file_type)
 
 template isdata(path:string): bool =
@@ -91,34 +90,6 @@ proc url(t:Track): string =
   if t.path.isremote or t.path.isdata:
     return t.path
   result = &"/data/tracks/{extractFileName(t.path)}"
-
-#[
-proc dataurl(t:Track): string =
-
-  # region is the swithc. if we have it, we use it and encode
-  # otherwise, we rely on the server
-  if t.region == "": return t.url
-
-  case t.format
-  of "bam", "cram":
-    var ibam:Bam
-    if not ibam.open(t.path, fai=t.reference, index=true):
-      quit &"couldnt open bam/cram file {t.path} with reference {t.reference}"
-    result = ibam.encode(t.region)
-    ibam.close()
-  of "vcf", "bcf":
-    var ivcf:VCF
-    if not ivcf.open(t.path):
-      quit &"couldnt open vcf/bcf file: {t.path}"
-    result = ivcf.encode(t.region)
-    ivcf.close()
-  of "bed":
-    # TODO: check for index and use bed12
-    result = t.path.encode(t.region, TrackFileType.bed)
-
-  else:
-    return t.url
-    ]#
 
 proc index_ext*(t:Track): string =
   if t.path.isremote:

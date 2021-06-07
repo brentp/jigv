@@ -33,7 +33,7 @@ proc check_chrom(targets: seq[Target|Contig], chrom:string): string =
       return t.name
   raise newException(KeyError, &"[jigv] error chromosome: {chrom} not found in bam")
 
-proc encode*(ibam:Bam, region:string): string =
+proc encode*(ibam:Bam, region:string, hitid:int=int.high): string =
 
   var obam:Bam
   var path = os.getTempDir() & "/" &  $(rand(int.high)) & ".bam"
@@ -47,16 +47,21 @@ proc encode*(ibam:Bam, region:string): string =
   # when writing small bams, most of the space is actually the bam header.
   # so we drop all PG lines and take only name and len from the SQ lines.
   # on a test-set, this drops the size of a generated html from 127MB to 31MB.
+  # using hitid to drop unused SQs (e.g. HLA, random chroms) that are not seen
+  # as mates for the given regions drops this further to ~5MB.
   var new_header: seq[string]
   var new_line: seq[string]
+  var ntids:int = 0
   for line in ($(ibam.hdr)).split("\n"):
     if line.startswith("@PG"): continue
     if line.startswith("@SQ"):
+      ntids += 1
       new_line.setLen(0)
       for t in line.split("\t"):
         if t[0] == '@' or t.startswith("SN") or t.startswith("LN"):
           new_line.add(t)
       new_header.add(new_line.join("\t"))
+      if ntids > hitid: break
     else:
       new_header.add(line)
 
@@ -69,11 +74,28 @@ proc encode*(ibam:Bam, region:string): string =
   let chromse = region.split(':')
   let chrom = check_chrom(ibam.hdr.targets, chromse[0])
   var region = &"{chrom}:{chromse[1]}"
+  var highest_tid = 0
 
-  for aln in ibam.query(region):
-    obam.write(aln)
+  if hitid == int.high:
+    for aln in ibam.query(region):
+      highest_tid = max(aln.mate_tid, max(aln.tid, highest_tid))
+      obam.write(aln)
+  else:
+    highest_tid = hitid
+    for aln in ibam:
+      obam.write(aln)
 
   obam.close()
+
+  # we can make this even smaller by dropping SQ values from
+  # the header that we don't need.
+  # so we recurse and drop extra sq lines.
+  if highest_tid < h.targets.len - 200 and hitid == int.high:
+    var ibam2:Bam
+    if not ibam2.open(path):
+        quit "could not open input tmp bam"
+    return ibam2.encode(region, highest_tid)
+
   result = prefix & base64.encode(path.readFile)
 
 proc encode*(ivcf:VCF, region:string): string =
@@ -117,7 +139,7 @@ proc expand(region:string, dist:int): string =
   var se = chromse[1].split("-")
   return &"{chromse[0]}:{max(0, parseInt(se[0]) - dist)}-{parseInt(se[1]) + dist}"
 
-proc encode*(fai:Fai, region:string, expand:int=20): string =
+proc encode*(fai:Fai, region:string, expand:int=200): string =
 
   var region = region.expand(expand)
 
@@ -228,10 +250,22 @@ proc is_del(v:Variant): bool {.inline.} =
     return v.ALT[0].startswith("<DEL")
   return v.REF.len > v.ALT[0].len
 
+proc getAB(v:Variant): seq[float32] =
+  if v.format.get("AB", result) != Status.OK:
+
+    var ad: seq[int32]
+    if v.format.get("AD", ad) != Status.OK:
+      return
+    result = newSeq[float32](v.n_samples)
+    for i in 0..<v.n_samples:
+      result[i] = ad[2*i+1].float32 / max(1, ad[2*i+1] + ad[2*i]).float32
+  for ab in result.mitems:
+    if ab < 0: ab = 0
+    if ab > 1: ab = 1
+
 proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
              cytoband:string="",
-             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=40, single_locus:string=""): JsonNode =
-  var variant = variant.copy()
+             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=100, single_locus:string=""): JsonNode =
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
   # TODO: handle anno_files
@@ -254,7 +288,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
       #"search": true,
       #"queryParametersSupported": true,
       #"showChromosomeWidget": false,
-      #"sampleNameViewportWidth": 512,
+      "sampleNameViewportWidth": 512,
     }
   if fasta != nil:
     json["reference"] = %* {"fastaURL": fasta.encode(locus) }
@@ -267,6 +301,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
   var x: seq[int32]
   var GTs: Genotypes
   var GQs: seq[int32]
+  var ABs: seq[float32]
 
   if ivcf != nil:
     let variant_name = variant.get_display_name
@@ -278,6 +313,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     tracks.add(tr)
     GTs = variant.format.genotypes(x)
     discard variant.format.get("GQ", GQs)
+    ABs = variant.getAB()
 
   for sample in samples:
     var ibam = bams[sample.id]
@@ -285,11 +321,13 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     try:
         name = sample["label"]
     except:
-        name = sample.id
+        name = sample.id & "<br>"
     if GTs.len > 0:
-      name &= &" GT: <b>{GTs[sample.i]}</b>"
+      name &= &" GT:<b>{GTs[sample.i]}</b>"
     if GQs.len > 0:
-      name &= &" GQ: <b>{GQs[sample.i]}</b>"
+      name &= &" GQ:<b>{GQs[sample.i]}</b>"
+    if ABs.len > 0:
+      name &= &" AB:<b>{ABs[sample.i]:.2f}</b>"
 
     var tr = Track(name:name, path: ibam.encode(locus), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
     tracks.add(tr)
@@ -372,12 +410,16 @@ proc main*(args:seq[string]=commandLineParams()) =
       if bams.len == 0: firstbam = ibam
       bams[ibam.samplename] = ibam
 
-    var ivcf:VCF
+    var
+      ivcf:VCF
+      ivcf2:VCF # we iterate over the other vcf at each step so need to handles
     var samples:seq[Sample]
     var sample_i:int
 
     if ':' notin opts.sites:
       if not ivcf.open(opts.sites):
+        quit &"[jigv] could not open {opts.sites}"
+      if not ivcf2.open(opts.sites):
         quit &"[jigv] could not open {opts.sites}"
 
       if opts.ped == "":
@@ -415,16 +457,18 @@ proc main*(args:seq[string]=commandLineParams()) =
     # this is used in the browser so a user can link
     # to a specific location
     var loc2idx = newTable[string, int]()
+    var k = 0
 
     if ivcf != nil:
       for v in ivcf:
-        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband)
+        k += 1
+        var tracks = v.encode(ivcf2, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
         var s = ($tracks).encode
         loc2idx[($(tracks["locus"].str)).replace(",", "")] = loc2idx.len
         sessions.add(s)
-        if sessions.len >= 200: break
+        if sessions.len >= 1000: break
     else:
       var v:Variant
       var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=opts.sites)
@@ -434,7 +478,9 @@ proc main*(args:seq[string]=commandLineParams()) =
       sessions.add(s)
 
     stderr.write_line opts.genome_build
-    stderr.write_line &"[jigv] writing {sessions.len} regions to html"
+    stderr.write_line &"[jigv] writing {sessions.len} regions to html of {k} variants"
+    ivcf.close()
+    ivcf2.close()
     var meta_options = %* {
       "showChromosomeWidget": false,
       "search": true,
