@@ -206,7 +206,8 @@ proc get_display_name(v:Variant): string =
 
 proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
              cytoband:string="",
-             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=120, single_locus:string=""): JsonNode =
+             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=150, single_locus:string=""): JsonNode =
+  var variant = variant.copy()
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
   # TODO: handle anno_files
@@ -233,8 +234,8 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     }
   if fasta != nil:
     json["reference"] = %* {"fastaURL": fasta.encode(locus) }
-  if cytoband != "":
-    json["reference"]["cytobandURL"] = % cytoband.encode(locus, TrackFileType.cytoband)
+    if cytoband != "":
+      json["reference"]["cytobandURL"] = % cytoband.encode(locus, TrackFileType.cytoband)
 
   var tracks: seq[Track]
   let n_tracks = samples.len
@@ -275,6 +276,15 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     tracks.add(tr)
 
   json["tracks"] = %* tracks
+  for tr in json["tracks"]:
+    if $(tr["type"]) == "\"alignment\"":
+      tr["sort"] = %* {
+        "chr": $variant.CHROM,
+        "position": variant.start + 1,
+        "option": "BASE",
+        "direction": if variant.REF[0] < variant.ALT[0][0]: "DESC" else:"ASC",
+      }
+      stderr.write_line tr["sort"]
   return json
 
 proc samplename(ibam:Bam): string =
@@ -387,7 +397,7 @@ proc main*(args:seq[string]=commandLineParams()) =
           tracks["genome"] = % opts.genome_build
         var s = ($tracks).encode
         sessions.add(s)
-        if sessions.len > 100: break
+        if sessions.len > 20: break
     else:
       var v:Variant
       var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=opts.sites)
