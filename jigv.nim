@@ -412,6 +412,9 @@ proc main*(args:seq[string]=commandLineParams()) =
       swap(samples[0], samples[sample_i])
       sample_i = 0
 
+    # this is used in the browser so a user can link
+    # to a specific location
+    var loc2idx = newTable[string, int]()
 
     if ivcf != nil:
       for v in ivcf:
@@ -419,6 +422,7 @@ proc main*(args:seq[string]=commandLineParams()) =
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
         var s = ($tracks).encode
+        loc2idx[($(tracks["locus"].str)).replace(",", "")] = loc2idx.len
         sessions.add(s)
         if sessions.len >= 200: break
     else:
@@ -440,6 +444,7 @@ proc main*(args:seq[string]=commandLineParams()) =
       "queryParametersSupported": true,
     }
     meta_options["sessions"] = %* sessions
+    meta_options["loc2idx"] = %* loc2idx
 
     var index_html = get_html().replace("<OPTIONS>", pretty(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
     echo index_html

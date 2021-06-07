@@ -147,7 +147,11 @@
             }
             // this is replaced and filled with any custom javascript from the user.
             <JIGV_CUSTOM_JS>
-            meta_options.index = 0
+
+            // try to get location from url hash.
+            var loc = location.hash.replace(/,/g, "").substring(1)
+            meta_options.index = meta_options.loc2idx[loc] || 0;
+
             meta_options["sessionURL"] = meta_options.sessions[meta_options.index];
             igv.createBrowser(div, meta_options).then(function (b) {
                 browser = b;
