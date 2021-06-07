@@ -44,7 +44,26 @@ proc encode*(ibam:Bam, region:string): string =
   if not obam.open(path, mode="wb"):
     quit "could not open open bam"
 
-  obam.write_header(ibam.hdr)
+  # when writing small bams, most of the space is actually the bam header.
+  # so we drop all PG lines and take only name and len from the SQ lines.
+  # on a test-set, this drops the size of a generated html from 127MB to 31MB.
+  var new_header: seq[string]
+  var new_line: seq[string]
+  for line in ($(ibam.hdr)).split("\n"):
+    if line.startswith("@PG"): continue
+    if line.startswith("@SQ"):
+      new_line.setLen(0)
+      for t in line.split("\t"):
+        if t[0] == '@' or t.startswith("SN") or t.startswith("LN"):
+          new_line.add(t)
+      new_header.add(new_line.join("\t"))
+    else:
+      new_header.add(line)
+
+  var h = bam.Header()
+  h.from_string(new_header.join("\n"))
+
+  obam.write_header(h)
 
   # handle chr prefix stuff
   let chromse = region.split(':')
@@ -204,9 +223,14 @@ proc get_display_name(v:Variant): string =
 
   result = &"{v.CHROM}:{v.start + 1}({r}/{alts.join(\",\")})"
 
+proc is_del(v:Variant): bool {.inline.} =
+  if v.ALT[0][0] == '<':
+    return v.ALT[0].startswith("<DEL")
+  return v.REF.len > v.ALT[0].len
+
 proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
              cytoband:string="",
-             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=150, single_locus:string=""): JsonNode =
+             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=40, single_locus:string=""): JsonNode =
   var variant = variant.copy()
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
@@ -280,11 +304,10 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     if $(tr["type"]) == "\"alignment\"":
       tr["sort"] = %* {
         "chr": $variant.CHROM,
-        "position": variant.start + 1,
+        "position": variant.start + (if variant.is_del: 2 else: 1),
         "option": "BASE",
-        "direction": if variant.REF[0] < variant.ALT[0][0]: "DESC" else:"ASC",
+        "direction": "ASC", # with ASC, igv.js always puts the alt base first.
       }
-      stderr.write_line tr["sort"]
   return json
 
 proc samplename(ibam:Bam): string =
@@ -397,7 +420,7 @@ proc main*(args:seq[string]=commandLineParams()) =
           tracks["genome"] = % opts.genome_build
         var s = ($tracks).encode
         sessions.add(s)
-        if sessions.len > 20: break
+        if sessions.len >= 200: break
     else:
       var v:Variant
       var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=opts.sites)
