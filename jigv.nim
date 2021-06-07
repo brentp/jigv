@@ -1,342 +1,454 @@
-import os
-import argparse
-import strformat
-import jester
-import browsers
-
-#import regex
-import re
-import hts
-import httpcore
-import hts/files
 import hts/bam
 import hts/vcf
-import tables
 import json
-import ./enc
+import hts/fai
+import hts/bgzf/bgzi
+import hts/files
+import pedfile
+import zippy
+import base64
+import os
+import tables
+import sets
+import random
+import strutils
+import pedfile
+import strformat
 import ./track
+import argparse
 
-var igvtracks*: seq[Track]
-var index_html:string
+randomize()
 
-proc read_range(file_path:string, range_req:string, extra_bytes:int=0): (seq[tuple[key: string, val: string]], string) =
-    ## the fasta request doesn't match the bam request so we use `extra_bytes` to
-    ## return 1 extra byte
-
-    let r = range_req
-    let byte_range = r.split("=")[1].split("-")
-    let offset = parseInt(byte_range[0])
-    let length = parseInt(byte_range[1]) - offset + extra_bytes
-
-    var fh:File
-    if not open(fh, file_path):
-       quit "couldnt open file:" & file_path
-    let size = getFileSize(fh)
-
-    fh.setFilePos(offset)
-    # not sure why we need + 1 here...
-    var data = newString(min(size, length+1))
-    data[data.high] = 0.char
-    let got = fh.readBuffer(data[0].addr.pointer, length)
-    if got != data.high:
-      #, $(got, length, "size:" & $size, data.high)
-      data.setLen(got+1)
-
-    let range_str = &"bytes {offset}-{offset + length}/{size}"
-    let headers = @[(key:"Content-Type", val:"application/octet-stream"), (key:"Content-Range", val: range_str)]
-    fh.close
-
-    return (headers, data)
-
-
-type region = tuple[chrom:string, start:int, stop:int]
-
+const prefix = "data:application/gzip;base64,"
 
 template stripChr*[T:string|cstring](s:T): string =
   if s.len > 3 and ($s).startswith("chr"): ($s)[3..<s.len] else: $s
 
-proc get_first_variant(path:string): string =
-  ## get the first variant in a VCF file
-  var ivcf:VCF
-  if not ivcf.open(path):
-    return ""
+proc sameChrom(a: string, b: string): bool =
+  return stripChr(a) == stripChr(b)
+
+proc check_chrom(targets: seq[Target|Contig], chrom:string): string =
+  for t in targets:
+    if sameChrom(t.name, chrom):
+      return t.name
+  raise newException(KeyError, &"[jigv] error chromosome: {chrom} not found in bam")
+
+proc encode*(ibam:Bam, region:string): string =
+
+  var obam:Bam
+  var path = os.getTempDir() & "/" &  $(rand(int.high)) & ".bam"
+
   defer:
-    ivcf.close
+    discard os.tryRemoveFile(path)
 
-  for v in ivcf:
-    var p = v.start
-    return &"{v.CHROM}:{p - 79}-{p + 80}"
+  if not obam.open(path, mode="wb"):
+    quit "could not open open bam"
 
-proc findNextFeature(ivcf:VCF, chrom:string, left:int, right:int, rep:int): region =
-  var contig_i = 0
-  for i, c in ivcf.contigs:
-
-    if stripChr(c.name) == stripChr(chrom):
-      result.chrom = c.name
-      contig_i = i
-      break
-
-  if result.chrom == "":
-    stderr.write_line &"[jigv] chrom not found {chrom}"
-    return
-
-  var center = int(0.5 + (left + right) / 2)
-
-  for v in ivcf.query(&"{result.chrom}:{left}"):
-    if v.start < center + 1: continue
-
-    var desired_range = right - left
-    if v.stop - v.start < 20:
-      var vmid = int(0.5 + int(v.start + v.stop) / 2)
-
-      var delta = int(0.5 + float(desired_range - int(v.stop - v.start)) * 0.5)
-
-      return (chrom, vmid - delta, vmid + delta)
-
-
+  # when writing small bams, most of the space is actually the bam header.
+  # so we drop all PG lines and take only name and len from the SQ lines.
+  # on a test-set, this drops the size of a generated html from 127MB to 31MB.
+  var new_header: seq[string]
+  var new_line: seq[string]
+  for line in ($(ibam.hdr)).split("\n"):
+    if line.startswith("@PG"): continue
+    if line.startswith("@SQ"):
+      new_line.setLen(0)
+      for t in line.split("\t"):
+        if t[0] == '@' or t.startswith("SN") or t.startswith("LN"):
+          new_line.add(t)
+      new_header.add(new_line.join("\t"))
     else:
-      var offset = 50
-      if v.start.int - offset <= left: continue
-      # then show left end centered in window
-      return (chrom, int(v.start.float - desired_range / 2), int(v.start.float + desired_range / 2))
+      new_header.add(line)
 
+  var h = bam.Header()
+  h.from_string(new_header.join("\n"))
+
+  obam.write_header(h)
+
+  # handle chr prefix stuff
+  let chromse = region.split(':')
+  let chrom = check_chrom(ibam.hdr.targets, chromse[0])
+  var region = &"{chrom}:{chromse[1]}"
+
+  for aln in ibam.query(region):
+    obam.write(aln)
+
+  obam.close()
+  result = prefix & base64.encode(path.readFile)
+
+proc encode*(ivcf:VCF, region:string): string =
+
+  var ovcf:VCF
+  var path = os.getTempDir() & "/" &  $(rand(int.high)) & ".vcf.gz"
+
+  defer:
+    discard os.tryRemoveFile(path)
+
+  if not ovcf.open(path, mode="wz"):
+    quit "could not open open bam"
 
   var contigs = ivcf.contigs
-  if contig_i == contigs.high: contig_i = 0 else: contig_i.inc
+  let chrom = check_chrom(contigs, region.split(":")[0])
 
-  # after incrementing to next chrom, we can continue trying.
-  # `rep` avoids infinite loop
-  if rep < contigs.len:
-    return ivcf.findNextFeature(contigs[contig_i].name, 0, 0, rep+1)
+  var new_header: seq[string]
+  for l in ($(ivcf.header)).split("\n"):
+    if l.startswith("##contig=") and &"ID={chrom}," notin l: continue
+    new_header.add(l)
 
-proc findNextFeature(path:string, chrom:string, left:int, right:int): region =
-  var ivcf:VCF
-  if not ivcf.open(path):
-    stderr.write_line &"[jigv] requested path {path} not found"
+  var h:vcf.Header
+  h.from_string(new_header.join("\n"))
 
-  defer: ivcf.close
+  ovcf.copy_header(h)
+  doAssert ovcf.write_header
 
-  return ivcf.findNextFeature(chrom, left, right, 0)
+  for v in ivcf.query(region):
+    v.c.rid = 0
+    doAssert ovcf.write_variant(v), $(region, $v)
 
-router igvrouter:
+  ovcf.close()
+  result = prefix & base64.encode(path.readFile)
 
-  get "/nextfeature/":
-    # user clicked right in browser. this finds next feature
-    # in first track that's BED or VCF
-    var locus = request.params["locus"].replace(",", "").split(":")
-    var chrom = locus[0]
-    var left = 0
-    var right = 100
-    if locus.len > 1:
-      var se = locus[1].split("-")
-      left = parseInt(se[0])
-      if se.len > 1:
-        right = parseInt(se[1])
-    var loc: region
-    for tr in igvtracks:
-      if not tr.path.endsWith(".vcf.gz"): continue
-      loc = tr.path.findNextFeature(chrom, left, right)
-      break
+proc encode*(s:string): string =
+  return prefix & base64.encode(compress(s))
 
-    let headers = [(key:"Content-Type", val:"application/json")]
-    if loc.chrom == "":
-      var data = %* {
-           "success": false
-      }
-      resp(Http200, headers, $data)
-      return
+proc expand(region:string, dist:int): string =
+  if dist == 0: return region
+  var chromse = region.split(":")
+  var se = chromse[1].split("-")
+  return &"{chromse[0]}:{max(0, parseInt(se[0]) - dist)}-{parseInt(se[1]) + dist}"
 
-    let data = %* {
-      "success": true,
-      "position": &"{loc.chrom}:{loc.start}-{loc.stop}",
-    }
-    resp(Http200, headers, $data)
+proc encode*(fai:Fai, region:string, expand:int=20): string =
 
+  var region = region.expand(expand)
 
-  get "/data/tracks/@name":
-    let name = extractFileName(@"name")
-    var file_path: string
-    var tr: Track
-    for otr in igvtracks:
-      if name == extractFileName(otr.path):
-        tr = otr
-        file_path = tr.path
+  var s:string
+  try:
+    s = fai.get(region)
+  except:
+    s = fai.get(if not region.startswith("chr"): "chr" & region else: stripChr(region))
+    stderr.write_line "[jigv] found fasta sequence with chr prefix change"
+  var tmp = &">{region}\n{s}"
+  result = prefix & base64.encode(compress(tmp))
 
-    if file_path == "" and "Range" in request.headers.table:
-      resp(Http404)
-    elif file_path == "":
-      # requesting index or other full file
-      for tr in igvtracks:
-        if name == extractFileName(tr.indexUrl):
-          file_path = tr.path & tr.index_ext
-          let data = file_path.readFile
-          let headers = [(key:"Content-Type", val:"application/octet-stream")]
-          resp(Http200, headers, data)
-          return
-    elif file_path != "" and "Range" notin request.headers.table and "range" notin request.headers.table:
-      stderr.write_line "slurping file:", file_path
-      let data = file_path.readFile
-      let headers = [(key:"Content-Type", val:"application/octet-stream")]
-      resp(Http200, headers, data)
-      return
+type TrackFileType* {.pure.} = enum
+  cytoband
+  bed
+  bed12
+  indexed
 
+proc get_samples(samples:seq[Sample], sample_i:int, max_samples:int): seq[Sample] =
+  # given sample_i, get related samples to show in the plot
+  let sample = samples[sample_i]
+  sample.extra.add(Pair(key: "label", val: sample.id))
+  result.add(sample)
 
-    let r = request.headers["Range"]
+  for (lbl, parent) in [("dad", sample.dad), ("mom", sample.mom)]:
+    if parent == nil: continue
+    var aff = if parent.affected: "(affected)" else: ""
+    parent.extra.add(Pair(key: "label", val: &"{lbl}:{parent.id}{aff}"))
+    result.add(parent)
 
-    var (headers, data) = file_path.read_range(r, extra_bytes=int(tr.format == "cram"))
-    resp(Http206, headers, data)
+  # add kids:
+  for k in sample.kids:
+    if result.len < max_samples:
+      var aff = if k.affected: "(affected)" else: ""
+      k.extra.add(Pair(key: "label", val: &"offspring:{k.id}{aff}"))
+      result.add(k)
 
-  get re"/reference/(.+)":
-    var path = request.matches[0]
-    if path.endsWith(".fai"):
-      let data = path.readFile
-      let headers = [(key:"Content-Type", val:"application/octet-stream")]
-      resp(Http200, headers, data)
-      return
+  # add siblings
+  if result.len > 1:
+    for k in sample.siblings:
+      if k.i >= 0 and k.i != sample.i and result.len < max_samples:
+        var aff = if k.affected: "(affected)" else: ""
+        k.extra.add(Pair(key: "label", val: &"sibling:{k.id}{aff}"))
+        result.add(k)
+  # TODO: add unrelated samples.
 
-    if "range" notin request.headers.table and "Range" notin request.headers.table:
-      quit "can't handle reference request without range"
+proc encode*(path:string, region:string, typ:TrackFileType): string =
 
-    let r = request.headers["Range"]
-    var (headers, data) = path.read_range(r, extra_bytes=1)
-    resp(Http206, headers, data)
+  let chrom = stripChr(region.split(":")[0])
+  let start = parseInt(region.split(":")[1].split("-")[0])
+  let stop =  parseInt(region.split(":")[1].split("-")[1])
 
+  case typ
+  of TrackFileType.cytoband, TrackFileType.bed, TrackFileType.bed12:
+    var clines: seq[string]
+    for line in path.hts_lines:
+      var toks = line.split("\t")
+      if not sameChrom(toks[0], chrom): continue
+      # for bed format, we check the actual positions.
+      if typ == TrackFileType.bed:
+        let s = parseInt(toks[1])
+        if s > stop: continue
+        let e = parseInt(toks[2])
+        if e < start: continue
+      clines.add(line)
+    clines.add("") # so we get a trailing newline
+    var tmp = clines.join("\n")
+    return prefix & base64.encode(compress(tmp, dataFormat=dfGzip, level=1))
 
-  get "/":
-    resp index_html
+  of TrackFileType.indexed:
 
-proc fill(templ:string, args:auto, tracks:var seq[Track], options:JsonNode, first_vcf_track_index:int, flank=100) =
-  # if we are here, then we are filling the template with each track with the
-  # data urls.
-  doAssert args.region != ""
-  for tr in tracks.mitems:
-    tr.region = args.region
+    var bgz:BGZI
+    if not bgz.open(path):
+      stderr.write_line &"[jigv] warning: {path} should be compressed and with csi index. trying (slow) full search over lines instead."
+      return path.encode(region, TrackFileType.bed)
 
-  options["tracks"] = %* tracks
-  options["locus"] = % args.region
+    var chromstuff = region.split(":")
+    var start = parseInt(chromstuff[1].split('-')[0])
+    var stop = parseInt(chromstuff[1].split('-')[1])
+    var clines:seq[string]
+    # linear search...
+    if chromstuff[0] notin bgz.csi.chroms:
+      if not chromstuff[0].startswith("chr"):
+        chromstuff[0] = "chr" & chromstuff[0]
+      elif len(chromstuff[0]) > 3:
+        chromstuff[0] = chromstuff[0][3..<chromstuff[0].len]
+    for l in bgz.query(chromstuff[0], start - 1, stop):
+      clines.add(l)
+    var tmp = clines.join("\n") & "\n"
+    return prefix & base64.encode(compress(tmp))
 
-  var fa:Fai
-  if args.fasta != "" and fa.open(args.fasta):
-    options["reference"] = %* {"fastaURL": fa.encode(args.region) }
-    if args.cytoband != "":
-      options["reference"]["cytobandURL"] = % args.cytoband.encode(args.region, TrackFileType.cytoband)
+proc get_display_name(v:Variant): string =
+  var r = v.REF
+  const max_len = 12
+  if len(r) > max_len:
+    r = r[0 ..< int(max_len/2)] & &".." & r[^int(max_len/2) ..< ^0]
+  var alts:seq[string]
+  for a in v.ALT:
+    var a = a
+    if len(a) > max_len:
+      a = a[0 ..< int(max_len/2)] & &".." & a[^int(max_len/2) ..< ^0]
+    alts.add(a)
+
+  result = &"{v.CHROM}:{v.start + 1}({r}/{alts.join(\",\")})"
+
+proc is_del(v:Variant): bool {.inline.} =
+  if v.ALT[0][0] == '<':
+    return v.ALT[0].startswith("<DEL")
+  return v.REF.len > v.ALT[0].len
+
+proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
+             cytoband:string="",
+             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=40, single_locus:string=""): JsonNode =
+  var variant = variant.copy()
+  # single_locus is used when we don't want to specify a vcf
+  # TODO: if region is too large, try multi-locus:
+  # TODO: handle anno_files
+  # TODO: handle slivar fields e.g. show that the variant is de novo or
+  # compound-het
+  # https://igv.org/web/release/2.8.4/examples/multi-locus.html
+  # small locus is for the initial view.
+  var small_locus, locus: string
+  if variant == nil:
+    doAssert single_locus != "", "[jigv] expected single_locus to be specified since no variant was given"
+    small_locus = single_locus
+    locus = single_locus
   else:
-      options["genome"] = % args.genome_build
+    small_locus = &"{variant.CHROM}:{max(1, variant.start - 20)}-{variant.stop + 20}"
+    # locus how much data we pull (and how far user can zoom out).
+    locus = &"{variant.CHROM}:{max(1, variant.start - flank)}-{variant.stop + flank}"
+  stderr.write_line "locus:", locus
+  var json:JsonNode = %* {
+      "locus": small_locus,
+      #"search": true,
+      #"queryParametersSupported": true,
+      #"showChromosomeWidget": false,
+      #"sampleNameViewportWidth": 512,
+    }
+  if fasta != nil:
+    json["reference"] = %* {"fastaURL": fasta.encode(locus) }
+    if cytoband != "":
+      json["reference"]["cytobandURL"] = % cytoband.encode(locus, TrackFileType.cytoband)
 
-  var sessions = newSeq[string]()
+  var tracks: seq[Track]
+  let n_tracks = samples.len
 
-  var meta_options = %* {
-    "showChromosomeWidget": false,
-    "search": false,
-    #"sessionURL": % encode($(options)),
-    "showCursorTrackingGuide": true,
-    "showChromosomeWidget": false,
-    "queryParametersSupported": true,
-  }
+  var x: seq[int32]
+  var GTs: Genotypes
+  var GQs: seq[int32]
 
-  if first_vcf_track_index >= 0:
-    var ivcf:VCF
-    if not ivcf.open(tracks[first_vcf_track_index].path):
-      raise newException(IOError, &"[jigv] couldn't open vcf path {tracks[first_vcf_track_index].path}")
-    for v in ivcf:
-      if v.stop - v.start > 10000: continue
-      var locus = &"{v.CHROM}:{max(0, v.start-flank)}-{v.stop + flank}"
-      stderr.write_line locus
-      for tr in tracks.mitems:
-        tr.region = locus
-      options["reference"] = %* {"fastaURL": fa.encode(locus) }
-      options["tracks"] = %*tracks
-      options["locus"] = % locus
-      sessions.add(encode($options))
-      if sessions.len > 100:
-        break
+  if ivcf != nil:
+    let variant_name = variant.get_display_name
+    var fname = ivcf.fname.splitFile.name
+    if fname.endsWith(".vcf") or fname.endsWith(".bcf"):
+      fname = fname[0 ..< ^4]
 
-  meta_options["sessionURL"] = % sessions[0]
-  meta_options["sessions"] = %* sessions
-  var index_html = templ.replace("<OPTIONS>", pretty(meta_options))
-  var js:string = args.js
-  if js.endsWith(".js"): js = readFile(js)
-  index_html = index_html.replace("<JIGV_CUSTOM_JS>", js)
-  echo index_html
+    var tr = Track(name:fname & "<br>" & variant_name , path:ivcf.encode(locus), n_tracks:n_tracks, file_type:FileType.VCF, region:locus)
+    tracks.add(tr)
+    GTs = variant.format.genotypes(x)
+    discard variant.format.get("GQ", GQs)
 
+  for sample in samples:
+    var ibam = bams[sample.id]
+    var name: string
+    try:
+        name = sample["label"]
+    except:
+        name = sample.id
+    if GTs.len > 0:
+      name &= &" GT: <b>{GTs[sample.i]}</b>"
+    if GQs.len > 0:
+      name &= &" GQ: <b>{GQs[sample.i]}</b>"
 
+    var tr = Track(name:name, path: ibam.encode(locus), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
+    tracks.add(tr)
 
-const templ = staticRead("jigv-template.html")
+  for a in anno_files:
+    let ft = if a.endswith(".vcf") or a.endswith(".vcf.gz") or a.endswith(".bcf"): FileType.VCF else: FileType.BED
+    var tr = Track(name: extractFileName(a), path:a.encode(locus, TrackFileType.indexed), file_type: ft, region:locus)
+    tracks.add(tr)
 
-proc main() =
+  json["tracks"] = %* tracks
+  for tr in json["tracks"]:
+    if $(tr["type"]) == "\"alignment\"":
+      tr["sort"] = %* {
+        "chr": $variant.CHROM,
+        "position": variant.start + (if variant.is_del: 2 else: 1),
+        "option": "BASE",
+        "direction": "ASC", # with ASC, igv.js always puts the alt base first.
+      }
+  return json
 
-  let p = newParser("jigv"):
-    option("-r", "--region", help="optional region to start viewing (will default to first variant in first vcf)")
-    flag("-o", "--open-browser", help="open browser")
-    option("-g", "--genome-build", default="hg38", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json)")
-    option("-f", "--fasta", default="", help="optional fasta reference file if not in hosted and needed to decode CRAM")
-    option("-c", "--cytoband", default="", help="optional path to cytoband bed file")
-    option("-p", "--port", default="", help="if this is not specified, jigv will try to set up the page so it doesn't need a server. (otherwise, a value like '5001' is a good choice.")
-    option("--js", help="custom javascript to inject. will have access to `options` and `options.tracks`. if this ends in .js it is read as a file")
-    arg("files", help="bam/cram/vcf/bed file(s) (with indexes)", nargs= -1)
-
-  var argv = commandLineParams()
-  if argv.len == 0: argv.add("-h")
-  var args = p.parse(argv)
-  if args.help:
-    quit(0)
-
-  var first_vcf = -1
-  for i, f in args.files:
-    var fs = f.split("#")
-    var tr = Track(name: extractFileName(f), path: f, n_tracks:args.files.len)
-    if fs.len == 2:
-      tr.path = fs[0]
-      tr.name = fs[1]
-    tr.file_type = tr.path.file_type_ez
-    if first_vcf == -1 and tr.file_type == FileType.VCF:
-      first_vcf = i
+proc samplename(ibam:Bam): string =
+  var found = initHashSet[string]()
+  for l in ($ibam.hdr).split('\n'):
+    if not l.startswith("@RG"): continue
+    for t in l.split('\t'):
+      if t.startswith("SM:"):
+        var p = t.split(':')
+        if p[1] notin found:
+          result = p[1]
+          found.incl(p[1])
+  doAssert found.len == 1, &"[jigv] found {found} sample names (SM read-group tags in bam header), expected exactly one."
 
 
-    igvtracks.add(tr)
-
-  args.region = args.region.replace(",", "")
-  if args.region == "" and first_vcf != -1:
-    args.region = get_first_variant(igvtracks[first_vcf].path)
-    stderr.write_line "set args.region to:", args.region
-
-  var tmpl = templ
+proc get_html(): string =
+  const templ = staticRead("jigv-template.html")
   if getEnv("JIGV_TEMPLATE") != "":
-    if not existsFile(getEnv("JIGV_TEMPLATE")):
-      stderr.write_line "[jigv] template not found in value given in JIGV_TEMPLATE: {getEnv(\"JIGV_TEMPLATE\")}"
-    else:
-      tmpl = readFile(getEnv("JIGV_TEMPLATE"))
+   if not fileExists(getEnv("JIGV_TEMPLATE")):
+     stderr.write_line "[jigv] template not found in value given in JIGV_TEMPLATE: {getEnv(\"JIGV_TEMPLATE\")}"
+   else:
+     result = readFile(getEnv("JIGV_TEMPLATE"))
+     return
+  return templ
 
-  let options = %* {
-      "tracks": igvtracks,
+
+proc main*(args:seq[string]=commandLineParams()) =
+
+  var p = newParser("samplename"):
+    option("--sample", help="sample-id for proband or sample of interest (default is first vcf sample)")
+    option("--sites", help="VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.")
+    # TODO: option("--js", help="custom javascript to load")
+    option("-g", "--genome-build", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json).  If this is specified then the page will request fasta, ideogram and gene data from a server.")
+    option("--cytoband", help="optional path to cytoband/ideogram file")
+    option("--annotation", help="path to additional bed or vcf file to be added as a track; may be specified multiple times", multiple=true)
+    option("--ped", help="pedigree file used to find relations for --sample")
+    option("--fasta", help="path to indexed fasta file; required for cram files")
+    arg("xams", nargs= -1, help="indexed bam or cram files for relevant samples. read-groups must match samples in vcf.")
+
+  const max_samples = 5
+  try:
+    var opts = p.parse(args)
+    if opts.help: quit 0
+    if opts.xams.len == 0:
+      stderr.write_line p.help
+      quit "specify at least 1 bam or cram file"
+
+    if opts.sites == "":
+      stderr.write_line p.help
+      quit "specify a vcf file to --sites"
+
+    if opts.genome_build != "" and opts.cytoband != "":
+      stderr.write_line "[jigv] warning: when -g/--genome-build is specified the cytoband argument is not used"
+      opts.cytoband = ""
+
+    var bams: TableRef[string, Bam] = newTable[string, Bam]()
+    var firstbam:Bam
+    for xam in opts.xams:
+      var ibam:Bam
+      if not ibam.open(xam, fai=opts.fasta, index=true):
+        quit &"[jigv] couldnt open {xam}"
+      if bams.len == 0: firstbam = ibam
+      bams[ibam.samplename] = ibam
+
+    var ivcf:VCF
+    var samples:seq[Sample]
+    var sample_i:int
+
+    if ':' notin opts.sites:
+      if not ivcf.open(opts.sites):
+        quit &"[jigv] could not open {opts.sites}"
+
+      if opts.ped == "":
+        if opts.sample != "":
+          samples = @[Sample(id: opts.sample, i:0)]
+        else:
+          samples = @[Sample(id: ivcf.samples[0], i:0)]
+        sample_i = 0
+
+      else:
+        samples = parse_ped(opts.ped).match(ivcf)
+        sample_i = if opts.sample != "": ivcf.samples.find(opts.sample) else: 0
+        samples = samples.get_samples(sample_i, max_samples).match(ivcf)
+
+      var sample_ids: seq[string]
+      for s in samples: sample_ids.add(s.id)
+      ivcf.set_samples(sample_ids)
+
+    else:
+      sample_i = 0
+      samples = @[Sample(id: firstbam.samplename, i:0)]
+
+    var fa:Fai
+    if opts.fasta != "" and opts.genome_build == "":
+      if not fa.open(opts.fasta):
+        quit &"[jigv] could not open {opts.fasta}"
+
+    var ifiles: seq[string] = opts.annotation
+    var sessions: seq[string]
+
+    if sample_i != 0:
+      swap(samples[0], samples[sample_i])
+      sample_i = 0
+
+
+    if ivcf != nil:
+      for v in ivcf:
+        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband)
+        if opts.genome_build != "":
+          tracks["genome"] = % opts.genome_build
+        var s = ($tracks).encode
+        sessions.add(s)
+        if sessions.len >= 200: break
+    else:
+      var v:Variant
+      var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=opts.sites)
+      if opts.genome_build != "":
+        tracks["genome"] = % opts.genome_build
+      var s = ($tracks).encode
+      sessions.add(s)
+
+    stderr.write_line opts.genome_build
+    stderr.write_line &"[jigv] writing {sessions.len} regions to html"
+    var meta_options = %* {
+      "showChromosomeWidget": false,
+      "search": true,
+      #"sessionURL": % encode($(options)),
+      "showCursorTrackingGuide": true,
+      "showChromosomeWidget": false,
       "queryParametersSupported": true,
     }
+    meta_options["sessions"] = %* sessions
 
-  if args.port == "":
-    tmpl.fill(args, igvtracks, options, first_vcf)
+    var index_html = get_html().replace("<OPTIONS>", pretty(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
+    echo index_html
 
-  else:
+  except UsageError as e:
+    stderr.write_line(p.help)
+    stderr.write_line(getCurrentExceptionMsg())
+    quit(1)
 
-    if args.fasta != "":
-      var rp = &"/reference/{args.fasta}"
-      var rpi = &"/reference/{args.fasta}.fai"
-      options["reference"] = %* {"fastaURL": rp, "indexURL": rpi, "id": extractFileName(args.fasta)}
-    else:
-      options["genome"] = % args.genome_build
-
-    if args.region != "":
-      options["locus"] = % args.region
-
-    index_html = tmpl.replace("<OPTIONS>", pretty(options))
-    var js:string = args.js
-    if js.endsWith(".js"): js = readFile(js)
-    index_html = index_html.replace("<JIGV_CUSTOM_JS>", js)
-
-    let settings = newSettings(port=parseInt(args.port).Port)
-    var jester = initJester(igvrouter, settings)
-    if args.open_browser:
-      openDefaultBrowser(&"http://localhost:{args.port}/")
-    jester.serve()
 
 when isMainModule:
   main()
