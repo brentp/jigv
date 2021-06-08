@@ -1,9 +1,10 @@
 [igv.js](https://github.com/igvteam/igv.js) is a great way to view aligments and other genomic data. 
-It requires that the files are hosted on a server, like apache or nginx and it requires writing html and
+It requires that the files are hosted on a server with access to the original data.
 javascript.
 
-`jigv` provides a single executable which encodes all variants, alignments, and annotations into a single HTML page that you can, for example,
-send candidate variants and alignments to collaborators who don't have access to the cluster where your data is stored.
+`jigv` encodes all variants, alignments, and annotations into a single HTML page that you can
+to collaborators who don't have access to the cluster where your data is stored.
+
 The resulting file is very fast to navigate; the left/right arrow keys advance to next/previous variants of interest.
 
 Usage looks like:
@@ -18,7 +19,7 @@ jigv \
     --annotation /data/human/LCR-hs38.bed.gz \ # specify as many of these as needed.
    > denovos.html
 ```
-With that, `denovos.html` will contain **all genomic data** embedded within it.
+With that, `denovos.html` will contain **all genomic data around variants of interest** embedded within it.
 
 With this, we are able to encode 924 candidate *de novo* variants into a 31MB html file that includes
 alignments for the proband, mom, and dad.
