@@ -1,5 +1,5 @@
 import hts/bam
-import hts/vcf
+import hts/vcf except Header
 import json
 import hts/fai
 import hts/bgzf/bgzi
@@ -65,7 +65,7 @@ proc encode*(ibam:Bam, region:string, hitid:int=int.high, drop_tags:seq[string]=
     else:
       new_header.add(line)
 
-  var h = bam.Header()
+  var h:bam.Header = Header()
   h.from_string(new_header.join("\n"))
 
   obam.write_header(h)
