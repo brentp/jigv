@@ -277,7 +277,6 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
              anno_files:seq[string], note:string="", max_samples:int=5, flank:int=100, single_locus:string=""): JsonNode =
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
-  # TODO: handle anno_files
   # TODO: handle slivar fields e.g. show that the variant is de novo or
   # compound-het
   # https://igv.org/web/release/2.8.4/examples/multi-locus.html
@@ -305,7 +304,9 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
       json["reference"]["cytobandURL"] = % cytoband.encode(locus, TrackFileType.cytoband)
 
   var tracks: seq[Track]
-  let n_tracks = samples.len
+  var n_tracks = 0
+  for s in samples:
+    n_tracks += int(s.id in bams)
 
   var x: seq[int32]
   var GTs: Genotypes
@@ -325,6 +326,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     ABs = variant.getAB()
 
   for sample in samples:
+    if sample.id notin bams: continue
     var ibam = bams[sample.id]
     var name: string
     try:
