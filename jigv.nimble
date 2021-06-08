@@ -1,6 +1,6 @@
 version       = "0.1.0"
 author        = "Brent Pedersen"
-description   = "igv.js server"
+description   = "igv.js static files"
 license       = "MIT"
 
 
@@ -11,4 +11,3 @@ requires "argparse == 0.10.1", "zippy"
 installExt = @["nim"]
 
 skipDirs = @["tests"]
-

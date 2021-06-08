@@ -2,15 +2,26 @@
 It requires that the files are hosted on a server, like apache or nginx and it requires writing html and
 javascript.
 
-In a single binary, `jigv` provides a server and some default configuration,
-javascript, and HTML so you can do:
+`jigv` provides a single executable which encodes all variants, alignments, and annotations into a single HTML page that you can, for example,
+send candidate variants and alignments to collaborators who don't have access to the cluster where your data is stored.
+The resulting file is very fast to navigate; the left/right arrow keys advance to next/previous variants of interest.
+
+Usage looks like:
 
 ```
-jigv --open-browser --region chr1:34566-34999 *.bam /path/to/some.cram my.vcf.gz
+jigv \
+    --sample HG01053 \     # the sample of interest drawn in top panel
+    --ped trio.ped \       # jigv will use this to also show parents and sibs of --sample
+    --sites dn.vcf.gz \    # e.g. candidate de novo varants
+    --fasta $reference_fasta \
+    --annotation hg38.refGene.bed.gz \         # see: https://github.com/brentp/jigv/wiki/bed12
+    --annotation /data/human/LCR-hs38.bed.gz \ # specify as many of these as needed.
+   > denovos.html
 ```
-With that, a server will start and a browser will open an igv.js viewer for your requested files, 
-similiar to how you'd do with the java version of IGV. Without the `--open-browser` option, you can
-go to *http://$server:5001/* (where `$server` is often `localhost`).
+With that, `denovos.html` will contain **all genomic data** embedded within it.
+
+With this, we are able to encode 924 candidate *de novo* variants into a 31MB html file that includes
+alignments for the proband, mom, and dad.
 
 # installation
 
@@ -20,38 +31,17 @@ grab a static linux binary from [releases](https://github.com/brentp/jigv/releas
 
 #### navigation
 
-`jigv` supports navigation along variants in a VCF file using the left and right arrow keys. it uses the first VCF track
+`jigv` supports navigation along variants in a VCF file using the left and right arrow keys. it uses the --sites VCF track
 as the one to navigate through.
-
-#### labels 
-
-by default a file like `/path/to/some.bam` will have a name of `some.bam` to change that send `"/path/to/some.bam#label"`
-where anything after the `#` is used as the label.
-
-#### remote servers 
-
-This can be very useful on a `server` even if it's not open for browsing non-standard ports: in a screen start jigv with the desired files. 
-Then from your remote machine connect with ssh tunneling:
-
-```
-# in a screen/tmux session
-server: jigv "/path/to/kid.bam#proband" "/path/to/mom.bam#mom" "/path/to/dad.bam#dad" "/path/to/joint.vcf.gz"
-
-# set up the tunnel on local machine (replace $server with the hostname you would normally ssh)
-local: ssh -N -L localhost:5001:localhost:5001 $server
-```
-
-Then browse localhost:5001 on your local machine.
-
 
 #### automated screenshots
 
-given a server running at: localhost:5001, a PNG screenshot for `region=chr5:1410040-1412784` can be created with
+given an html file at e.g. `denovos.html`, a PNG screenshot for `region=chr5:1410040-1412784` can be created with
 
 ```
 google-chrome --window-size=1200,1200  --virtual-time-budget=10000 \
    --headless --run-all-compositor-stages-before-draw \
-   --screenshot=${region/:/-}.png "http://localhost:5001/#$region"
+   --screenshot=${region/:/-}.png "denovos.html#$region"
 ```
 
 This can be scripted with your favorite language for a set of regions.
@@ -60,44 +50,33 @@ This can be scripted with your favorite language for a set of regions.
 
 ```
 Usage:
-  jigv [options] [files ...]
+  jigv [options] [xams ...]
 
 Arguments:
-  [files ...]      bam/cram/vcf/bed{,.gz} file(s) (with indexes)
+  [xams ...]       indexed bam or cram files for relevant samples. read-groups must match samples in vcf.
 
 Options:
-  -r, --region=REGION        optional region to start at (default: chr1)
-  -o, --open-browser         automatically open default browser to view files
+  --sample=SAMPLE            sample-id for proband or sample of interest (default is first vcf sample)
+  --sites=SITES              VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.
   -g, --genome-build=GENOME_BUILD
-                             genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json) (default: hg38)
-  -f, --fasta=FASTA          optional fasta reference file if not in hosted and needed to decode CRAM
-  -p, --port=PORT            (default: 5001)
-  --js=JS                    custom javascript to inject. will have access to `options` and `options.tracks`. if this ends in .js it is read as a file
-  -h, --help                 Show this help
+                             genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json).  If this is specified then the page will request fasta, ideogram and gene data from a server.
+  --cytoband=CYTOBAND        optional path to cytoband/ideogram file
+  --annotation=ANNOTATION    path to additional bed or vcf file to be added as a track; may be specified multiple times
+  --ped=PED                  pedigree file used to find relations for --sample
+  --fasta=FASTA              path to indexed fasta file; required for cram files
 ```
-
-the --js option allows the user to inject some javascript to affect the configuration. An example:
-
-```
-  --js "options.tracks[0].height = 500; options.tracks[0].colorBy = 'firstOfPairStrand'"
-```
-to change the height and the coloring strategy for the first track. 
 
 # limitations
 
-+ this is likely insecure in many ways.
++ this embeds **all** of the data in the HTML page. `jigv` tries to reduce the alignment data
+  so that, for example 900 de novos variants with alignments for a trio generate an html file of
+  only about 30 megabytes
 + if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
 + not all file types are supported
 
-# examples
 
-while this is most helpful when you don't already have a server, you can use it to quickly view files
-that are public:
-```
-url=https://s3.amazonaws.com/1000genomes/phase3/data
-jigv -g hg19 \
-    -r "chr5:1,278,267-1,281,011" \
-    -o "$url/HG00096/exome_alignment/HG00096.mapped.ILLUMINA.bwa.GBR.exome.20120522.bam#kid" \
-       "$url/NA18637/exome_alignment/NA18637.mapped.ILLUMINA.bwa.CHB.exome.20121211.bam#mom"
-```
+## See Also
 
++ [igv-reports](https://github.com/igvteam/igv-reports) by the IGV team does this as well. `jigv` adds extra features for
+  working with pedigrees, reducing dependencies, and reducing the output size. That said, igv-reports may work well for your
+  use-case.

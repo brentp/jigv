@@ -385,7 +385,7 @@ proc get_html(): string =
 
 proc main*(args:seq[string]=commandLineParams()) =
 
-  var p = newParser("samplename"):
+  var p = newParser("jigv"):
     option("--sample", help="sample-id for proband or sample of interest (default is first vcf sample)")
     option("--sites", help="VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.")
     # TODO: option("--js", help="custom javascript to load")
