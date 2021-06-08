@@ -264,6 +264,14 @@ proc getAB(v:Variant): seq[float32] =
     if ab < 0: ab = 0
     if ab > 1: ab = 1
 
+proc ff(f:float32): string {.inline.} =
+  if f > 0.01 or f == 0:
+    result = &"{f:.2f}"
+  else:
+    result = &"{f:.3f}"
+  if result.endswith(".00"):
+    result = result[0 ..< ^3]
+
 proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
              cytoband:string="",
              anno_files:seq[string], note:string="", max_samples:int=5, flank:int=100, single_locus:string=""): JsonNode =
@@ -328,7 +336,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
     if GQs.len > 0:
       name &= &" GQ:<b>{GQs[sample.i]}</b>"
     if ABs.len > 0:
-      name &= &" AB:<b>{ABs[sample.i]:.2f}</b>"
+      name &= &" AB:<b>{ff(ABs[sample.i])}</b>"
 
     var tr = Track(name:name, path: ibam.encode(locus), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
     tracks.add(tr)
