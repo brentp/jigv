@@ -33,7 +33,7 @@ proc check_chrom(targets: seq[Target|Contig], chrom:string): string =
       return t.name
   raise newException(KeyError, &"[jigv] error chromosome: {chrom} not found in bam")
 
-proc encode*(ibam:Bam, region:string, hitid:int=int.high): string =
+proc encode*(ibam:Bam, region:string, hitid:int=int.high, drop_tags:seq[string]= @["RG", "PG", "MD", "XS" ,"AS"]): string =
 
   var obam:Bam
   var path = os.getTempDir() & "/" &  $(rand(int.high)) & ".bam"
@@ -83,18 +83,19 @@ proc encode*(ibam:Bam, region:string, hitid:int=int.high): string =
   else:
     highest_tid = hitid
     for aln in ibam:
+      for tag in drop_tags:
+        discard aln.delete_tag(tag)
       obam.write(aln)
-
   obam.close()
 
   # we can make this even smaller by dropping SQ values from
   # the header that we don't need.
   # so we recurse and drop extra sq lines.
-  if highest_tid < h.targets.len - 200 and hitid == int.high:
+  if highest_tid < h.targets.len - 20 and hitid == int.high:
     var ibam2:Bam
     if not ibam2.open(path):
         quit "could not open input tmp bam"
-    return ibam2.encode(region, highest_tid)
+    return ibam2.encode(region, highest_tid, drop_tags)
 
   result = prefix & base64.encode(path.readFile)
 
