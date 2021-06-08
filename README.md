@@ -15,9 +15,9 @@ jigv \
     --ped trio.ped \       # jigv will use this to also show parents and sibs of --sample
     --sites dn.vcf.gz \    # e.g. candidate de novo varants
     --fasta $reference_fasta \
-    --annotation hg38.refGene.bed.gz \         # see: https://github.com/brentp/jigv/wiki/bed12
-    --annotation /data/human/LCR-hs38.bed.gz \ # specify as many of these as needed.
-   > denovos.html
+    --annotation hg38.refGene.bed.gz \ # see: https://github.com/brentp/jigv/wiki/bed12
+    --annotation LCR-hs38.bed.gz \     # specify as many of these as needed.
+    /path/to/*.cram > denovos.html
 ```
 With that, `denovos.html` will contain **all genomic data around variants of interest** embedded within it.
 
