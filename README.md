@@ -58,7 +58,9 @@ Arguments:
 
 Options:
   --sample=SAMPLE            sample-id for proband or sample of interest (default is first vcf sample)
-  --sites=SITES              VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.
+  --sites=SITES              VCF or BED containing variants of interest for --sample.
+                             If this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.
+			     If it ends with '.bed' or '.bed.gz' it's assumed to be BED format.
   -g, --genome-build=GENOME_BUILD
                              genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json).  If this is specified then the page will request fasta, ideogram and gene data from a server.
   --cytoband=CYTOBAND        optional path to cytoband/ideogram file

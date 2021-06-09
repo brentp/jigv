@@ -350,7 +350,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, s
 
   json["tracks"] = %* tracks
   for tr in json["tracks"]:
-    if $(tr["type"]) == "\"alignment\"":
+    if $(tr["type"]) == "\"alignment\"" and variant != nil:
       tr["sort"] = %* {
         "chr": $variant.CHROM,
         "position": variant.start + (if variant.is_del: 2 else: 1),
@@ -382,12 +382,22 @@ proc get_html(): string =
      return
   return templ
 
+iterator generate_sites(path_or_region:string): string =
+  if ':' in path_or_region:
+    yield path_or_region
+  else:
+    for l in path_or_region.hts_lines:
+      if l[0] == '#': continue
+      var toks = l.split("\t")
+      if toks.len < 3:
+        stderr.write_line &"[jigv] WARNING line: {l} not recogized as bed line. skipping"
+      yield &"{toks[0]}:{parseInt(toks[1])+1}-{parseInt(toks[2])}"
 
 proc main*(args:seq[string]=commandLineParams()) =
 
   var p = newParser("jigv"):
     option("--sample", help="sample-id for proband or sample of interest (default is first vcf sample)")
-    option("--sites", help="VCF containing variants of interest for --sample. if this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.")
+    option("--sites", help="VCF or BED containing variants of interest for --sample. If this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest. If it ends with '.bed' or '.bed.gz' it's assumed to be BED format.")
     # TODO: option("--js", help="custom javascript to load")
     option("-g", "--genome-build", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json).  If this is specified then the page will request fasta, ideogram and gene data from a server.")
     option("--cytoband", help="optional path to cytoband/ideogram file")
@@ -427,7 +437,7 @@ proc main*(args:seq[string]=commandLineParams()) =
     var samples:seq[Sample]
     var sample_i:int
 
-    if ':' notin opts.sites:
+    if ':' notin opts.sites and not (opts.sites.endsWith(".bed") or opts.sites.endsWith(".bed.gz")):
       if not ivcf.open(opts.sites):
         quit &"[jigv] could not open {opts.sites}"
       if not ivcf2.open(opts.sites):
@@ -468,11 +478,9 @@ proc main*(args:seq[string]=commandLineParams()) =
     # this is used in the browser so a user can link
     # to a specific location
     var loc2idx = newTable[string, int]()
-    var k = 0
 
     if ivcf != nil:
       for v in ivcf:
-        k += 1
         var tracks = v.encode(ivcf2, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
@@ -482,16 +490,19 @@ proc main*(args:seq[string]=commandLineParams()) =
         if sessions.len >= 1000: break
     else:
       var v:Variant
-      var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=opts.sites)
-      if opts.genome_build != "":
-        tracks["genome"] = % opts.genome_build
-      var s = ($tracks).encode
-      sessions.add(s)
+
+      for locus in generate_sites(opts.sites):
+        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=locus)
+        if opts.genome_build != "":
+          tracks["genome"] = % opts.genome_build
+        var s = ($tracks).encode
+        sessions.add(s)
 
     stderr.write_line opts.genome_build
-    stderr.write_line &"[jigv] writing {sessions.len} regions to html of {k} variants"
-    ivcf.close()
-    ivcf2.close()
+    stderr.write_line &"[jigv] writing {sessions.len} regions to html"
+    if ivcf != nil:
+      ivcf.close()
+      ivcf2.close()
     var meta_options = %* {
       "showChromosomeWidget": false,
       "search": true,

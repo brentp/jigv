@@ -1,3 +1,11 @@
+v0.1.1 (dev)
+======
++ support BED as input
+
+v0.1.0
+======
++ rewrite so no server is needed
+
 v0.0.8
 ======
 + show help when run with no args (#7)
