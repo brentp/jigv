@@ -272,7 +272,7 @@ proc ff(f:float32): string {.inline.} =
   if result.endswith(".00"):
     result = result[0 ..< ^3]
 
-proc encode*(variant:Variant, ivcf:VCF, bams:TableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
+proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
              cytoband:string="",
              anno_files:seq[string], note:string="", max_samples:int=5, flank:int=100, single_locus:string=""): JsonNode =
   # single_locus is used when we don't want to specify a vcf
@@ -422,13 +422,11 @@ proc main*(args:seq[string]=commandLineParams()) =
       stderr.write_line "[jigv] warning: when -g/--genome-build is specified the cytoband argument is not used"
       opts.cytoband = ""
 
-    var bams: TableRef[string, Bam] = newTable[string, Bam]()
-    var firstbam:Bam
+    var bams: OrderedTableRef[string, Bam] = newOrderedTable[string, Bam]()
     for xam in opts.xams:
       var ibam:Bam
       if not ibam.open(xam, fai=opts.fasta, index=true):
         quit &"[jigv] couldnt open {xam}"
-      if bams.len == 0: firstbam = ibam
       bams[ibam.samplename] = ibam
 
     var
@@ -461,7 +459,11 @@ proc main*(args:seq[string]=commandLineParams()) =
 
     else:
       sample_i = 0
-      samples = @[Sample(id: firstbam.samplename, i:0)]
+      for name, ibam in bams:
+        samples.add(Sample(id:name, i: samples.len))
+        if samples.len == 8:
+          stderr.write_line "[jigv] showing only the first 8 samples"
+          break
 
     var fa:Fai
     if opts.fasta != "" and opts.genome_build == "":
