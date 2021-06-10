@@ -24,6 +24,8 @@ With that, `denovos.html` will contain **all genomic data around variants of int
 With this, we are able to encode 924 candidate *de novo* variants into a 31MB html file that includes
 alignments for the proband, mom, and dad.
 
+See [Examples](#Examples) for more
+
 # installation
 
 grab a static linux binary from [releases](https://github.com/brentp/jigv/releases/latest)
@@ -76,6 +78,7 @@ Options:
   only about 30 megabytes
 + if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
 + not all file types are supported
++ the sites file must contain only the variants to plot; there is no filtering in `jigv`
 
 
 ## See Also
@@ -83,3 +86,43 @@ Options:
 + [igv-reports](https://github.com/igvteam/igv-reports) by the IGV team does this as well. `jigv` adds extra features for
   working with pedigrees, reducing dependencies, and reducing the output size. That said, igv-reports may work well for your
   use-case.
+
+# examples
+
+1. a set of bam files given a set of **regions in BED format**:
+
+```
+jigv \
+    --fasta $fasta \
+    --sites $bed \
+    /path/to/*.bam > regions.html
+```
+
+This will use the first 8 bam files. Beyond that number the files are too large.
+
+
+2. a set of **de novo** variants for a trio:
+
+```
+jigv \
+    --sample $proband \     # the sample of interest drawn in top panel
+    --ped trio.ped \        # jigv will use this to also show parents and sibs of --sample
+    --sites dn.vcf.gz \     # file with candidate de novo varants
+    --fasta $fasta \
+    --annotation hg38.refGene.bed.gz \ # see: https://github.com/brentp/jigv/wiki/bed12
+    --annotation LCR-hs38.bed.gz     \ # specify as many of these as needed.
+    /path/to/*.cram > denovos.html
+```
+
+3. a **single region**
+
+```
+jigv \
+    --sample $proband \     # the sample of interest drawn in top panel
+    --ped trio.ped \        # jigv will use this to also show parents and sibs of --sample
+    --sites "chr1:3453454-3453554" \  # single region.
+    --fasta $fasta \
+    --annotation hg38.refGene.bed.gz \ # see: https://github.com/brentp/jigv/wiki/bed12
+    --annotation LCR-hs38.bed.gz     \ # specify as many of these as needed.
+    /path/to/*.cram > denovos.html
+```
