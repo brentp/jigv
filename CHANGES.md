@@ -1,6 +1,6 @@
-v0.1.2 (dev)
-============
-+ if no --sample use first affected
+v0.1.2
+======
++ if no --sample use first affected sample from pedigree file
 
 
 v0.1.1
