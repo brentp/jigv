@@ -393,6 +393,12 @@ iterator generate_sites(path_or_region:string): string =
         stderr.write_line &"[jigv] WARNING line: {l} not recogized as bed line. skipping"
       yield &"{toks[0]}:{parseInt(toks[1])+1}-{parseInt(toks[2])}"
 
+proc first_affected_or_zero*(samples:seq[Sample]): int =
+  for i, s in samples:
+    if s.affected: return i
+  if samples.len == 0: raise newException(IndexError, "[tiwih] no samples given")
+  return 0
+
 proc main*(args:seq[string]=commandLineParams()) =
 
   var p = newParser("jigv"):
@@ -450,7 +456,7 @@ proc main*(args:seq[string]=commandLineParams()) =
 
       else:
         samples = parse_ped(opts.ped).match(ivcf)
-        sample_i = if opts.sample != "": ivcf.samples.find(opts.sample) else: 0
+        sample_i = if opts.sample != "": ivcf.samples.find(opts.sample) else: samples.first_affected_or_zero
         samples = samples.get_samples(sample_i, max_samples).match(ivcf)
 
       var sample_ids: seq[string]

@@ -1,4 +1,9 @@
-v0.1.1 (dev)
+v0.1.2 (dev)
+============
++ if no --sample use first affected
+
+
+v0.1.1
 ======
 + support BED as input
 
