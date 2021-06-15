@@ -410,6 +410,7 @@ proc main*(args:seq[string]=commandLineParams()) =
     option("--annotation", help="path to additional bed or vcf file to be added as a track; may be specified multiple times", multiple=true)
     option("--ped", help="pedigree file used to find relations for --sample")
     option("--fasta", help="path to indexed fasta file; required for cram files")
+    option("--flank", default="100", help="bases on either side of the variant or region to show (default: 100)")
     arg("xams", nargs= -1, help="indexed bam or cram files for relevant samples. read-groups must match samples in vcf.")
 
   const max_samples = 5
@@ -440,6 +441,7 @@ proc main*(args:seq[string]=commandLineParams()) =
       ivcf2:VCF # we iterate over the other vcf at each step so need to handles
     var samples:seq[Sample]
     var sample_i:int
+    let flank = parseInt(opts.flank)
 
     if ':' notin opts.sites and not (opts.sites.endsWith(".bed") or opts.sites.endsWith(".bed.gz")):
       if not ivcf.open(opts.sites):
@@ -488,14 +490,20 @@ proc main*(args:seq[string]=commandLineParams()) =
     var loc2idx = newTable[string, int]()
 
     if ivcf != nil:
+      var n = 0
       for v in ivcf:
-        var tracks = v.encode(ivcf2, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband)
+        var tracks = v.encode(ivcf2, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, flank=flank)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
+        # allow lookup by locus (which includes padding) or directly by chrom:pos:ref:alt
+        loc2idx[($(tracks["locus"].str)).replace(",", "")] = n
+        loc2idx[&"""{v.CHROM}:{v.start+1}:{v.REF}:{join(v.ALT, ",")}"""] = n
+        n += 1
         var s = ($tracks).encode
-        loc2idx[($(tracks["locus"].str)).replace(",", "")] = loc2idx.len
         sessions.add(s)
-        if sessions.len >= 1000: break
+        if sessions.len >= 2000:
+          stderr.write_line "[jigv] WARNING! more than 2000 regions stopping here and not outputing further regions"
+          break
     else:
       var v:Variant
 
@@ -503,6 +511,7 @@ proc main*(args:seq[string]=commandLineParams()) =
         var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=locus)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
+        loc2idx[($(tracks["locus"].str)).replace(",", "")] = loc2idx.len
         var s = ($tracks).encode
         sessions.add(s)
 

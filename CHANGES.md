@@ -1,3 +1,8 @@
+v0.1.3 (dev)
+============
++ expose --flank option so user can specify size of flanking region to extract
++ allow linking by chrom:pos:ref:alt (in addition to region chrom:start-stop)
+
 v0.1.2
 ======
 + if no --sample use first affected sample from pedigree file
