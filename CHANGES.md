@@ -1,5 +1,9 @@
-v0.1.3 (dev)
-============
+v0.1.4
+======
++ handle and report weird AD values
+
+v0.1.3
+======
 + expose --flank option so user can specify size of flanking region to extract
 + allow linking by chrom:pos:ref:alt (in addition to region chrom:start-stop)
 

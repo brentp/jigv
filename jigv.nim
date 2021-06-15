@@ -259,7 +259,11 @@ proc getAB(v:Variant): seq[float32] =
       return
     result = newSeq[float32](v.n_samples)
     for i in 0..<v.n_samples:
-      result[i] = ad[2*i+1].float32 / max(1, ad[2*i+1] + ad[2*i]).float32
+      try:
+        result[i] = ad[2*i+1].float32 / max(1, ad[2*i+1] + ad[2*i]).float32
+      except OverflowError:
+        stderr.write_line &"[jigv] AB set to zero for AD: [{ad[2*i]}, {ad[2*i+1]}"
+
   for ab in result.mitems:
     if ab < 0: ab = 0
     if ab > 1: ab = 1
