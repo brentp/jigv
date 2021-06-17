@@ -79,6 +79,28 @@ for a trio at which point the single file becomes quite large (~60MB).
 Using `--template`, it's possible to send each encoded site to a separate file. These can be loaded on demand from a
 server or sent to the user and loaded as a script on demand from the local file system.
 
+Files written with `--template` but without `--template-raw' can be loaded from the local file-sytem of the user (or from a server depending on if they are viewing as `file:///...` on their local system or on a server. The code for that looks like this:
+
+```Javascript
+
+    var jigv_data; // define this here, but it is set when the script is loaded.
+    var s = document.createElement("script")
+    s.type = "text/javascript"
+    s.src = "$sample/chr1-1746431-A-T.jigv.js" // path to whichever file made by jigv.
+    s.onload = function(a, b) {
+        jigv_data["showChromosomeWidget"] = false
+        jigv_data["search"] = false
+        jigv_data["queryParametersSupported"] = true
+        jigv_data["showCursorTrackingGuide"] = true
+
+        var div = document.getElementById("igv")
+        meta_options = {"sessionURL": jigv_data }
+        igv.createBrowser(div, meta_options)
+    }
+
+```
+
+note that jigv writes the data as `jigv_data` so once the file is loaded, it can be accessed via that variable name.
 
 # limitations
 
