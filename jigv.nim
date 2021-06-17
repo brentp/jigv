@@ -403,6 +403,21 @@ proc first_affected_or_zero*(samples:seq[Sample]): int =
   if samples.len == 0: raise newException(IndexError, "[tiwih] no samples given")
   return 0
 
+proc write_site(s:string, site:string, tmpl:string, template_raw:bool) =
+    var path = tmpl % ["site", site]
+    createDir(splitFile(path).dir)
+    var fh:File
+    doAssert fh.open(path, mode=fmWrite), "[jigv] error opening template file"
+    if not template_raw:
+      fh.write("jigv_data = \"")
+      fh.write(s)
+      fh.write("\"")
+    else:
+      let prefix = "data:application/gzip;base64,"
+      doAssert s.startsWith(prefix)
+      fh.write(s[prefix.len .. s.high])
+    fh.close()
+
 proc main*(args:seq[string]=commandLineParams()) =
 
   var p = newParser("jigv"):
@@ -413,6 +428,8 @@ proc main*(args:seq[string]=commandLineParams()) =
     option("--cytoband", help="optional path to cytoband/ideogram file")
     option("--annotation", help="path to additional bed or vcf file to be added as a track; may be specified multiple times", multiple=true)
     option("--ped", help="pedigree file used to find relations for --sample")
+    option("--template", help="if specified, encoded data for each region is written to it's own js file and no html is generated. this is a file template like: 'jigv_encoded/HG002/${site}.js' where and `site` must be in the template to be filled by jigv", default="")
+    flag("--template-raw", help="by default if --template is specified, then the data is written to a javascript variable and includes the data: prefix. if this option is specified (along with --template), then the raw base64 encoded data is written to the file.")
     option("--fasta", help="path to indexed fasta file; required for cram files")
     option("--flank", default="100", help="bases on either side of the variant or region to show (default: 100)")
     arg("xams", nargs= -1, help="indexed bam or cram files for relevant samples. read-groups must match samples in vcf.")
@@ -499,11 +516,18 @@ proc main*(args:seq[string]=commandLineParams()) =
         var tracks = v.encode(ivcf2, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, flank=flank)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
+
+        var s = ($tracks).encode
+        if opts.`template` != "":
+            var site = &"""{v.CHROM}-{v.start+1}-{v.REF}-{join(v.ALT, ",")}"""
+            write_site(s, site, opts.`template`, opts.template_raw)
+            continue
+
+
         # allow lookup by locus (which includes padding) or directly by chrom:pos:ref:alt
         loc2idx[($(tracks["locus"].str)).replace(",", "")] = n
         loc2idx[&"""{v.CHROM}:{v.start+1}:{v.REF}:{join(v.ALT, ",")}"""] = n
         n += 1
-        var s = ($tracks).encode
         sessions.add(s)
         if sessions.len >= 2000:
           stderr.write_line "[jigv] WARNING! more than 2000 regions stopping here and not outputing further regions"
@@ -515,12 +539,20 @@ proc main*(args:seq[string]=commandLineParams()) =
         var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=locus)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
-        loc2idx[($(tracks["locus"].str)).replace(",", "")] = loc2idx.len
+
         var s = ($tracks).encode
+        if opts.`template` != "":
+            var site = locus.replace(':', '-')
+            write_site(s, site, opts.`template`, opts.template_raw)
+            continue
+
+
+        loc2idx[($(tracks["locus"].str)).replace(",", "")] = loc2idx.len
         sessions.add(s)
 
-    stderr.write_line opts.genome_build
-    stderr.write_line &"[jigv] writing {sessions.len} regions to html"
+    if opts.`template` == "":
+      stderr.write_line &"[jigv] writing {sessions.len} regions to html"
+
     if ivcf != nil:
       ivcf.close()
       ivcf2.close()

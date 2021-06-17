@@ -1,3 +1,8 @@
+v0.1.5
+======
++ add `--template` option to allow for each variant or site to be written to a separte js (or base64) file.
+  this allows a user to scale to as many variants as they like.
+
 v0.1.4
 ======
 + handle and report weird AD values

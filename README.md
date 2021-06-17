@@ -60,22 +60,26 @@ Arguments:
 
 Options:
   --sample=SAMPLE            sample-id for proband or sample of interest (default is first vcf sample)
-  --sites=SITES              VCF or BED containing variants of interest for --sample.
-                             If this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest.
-			     If it ends with '.bed' or '.bed.gz' it's assumed to be BED format.
+  --sites=SITES              VCF or BED containing variants of interest for --sample. If this contains ':', then it's used as a single region and the first bam/cram given is the sample of interest. If it ends with '.bed' or '.bed.gz' it's assumed to be BED format.
   -g, --genome-build=GENOME_BUILD
                              genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json).  If this is specified then the page will request fasta, ideogram and gene data from a server.
   --cytoband=CYTOBAND        optional path to cytoband/ideogram file
   --annotation=ANNOTATION    path to additional bed or vcf file to be added as a track; may be specified multiple times
   --ped=PED                  pedigree file used to find relations for --sample
+  --template=TEMPLATE        if specified, encoded data for each region is written to it's own js file and no html is generated. this is a file template like: 'jigv_encoded/HG002/${site}.js' where and `site` must be in the template to be filled by jigv
+  --template-raw             by default if --template is specified, then the data is written to a javascript variable and includes the data: prefix. if this option is specified (along with --template), then the raw base64 encoded data is written to the file.
   --fasta=FASTA              path to indexed fasta file; required for cram files
+  --flank=FLANK              bases on either side of the variant or region to show (default: 100) (default: 100)
+  -h, --help                 Show this help
 ```
 
 # limitations
 
-+ this embeds **all** of the data in the HTML page. `jigv` tries to reduce the alignment data
++ by default this embeds **all** of the data in the HTML page. `jigv` tries to reduce the alignment data
   so that, for example 900 de novos variants with alignments for a trio generate an html file of
-  only about 30 megabytes
+  only about 30 megabytes.
+  **NOTE** that as of version 0.1.5, jigv has the `--template` option to allow each region to by written to
+  a separate data-file. Using these overcomes the problem of putting all of the data in one file.
 + if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
 + not all file types are supported
 + the sites file must contain only the variants to plot; there is no filtering in `jigv`
