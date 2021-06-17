@@ -2,8 +2,8 @@
 It requires that the files are hosted on a server with access to the original data.
 javascript.
 
-`jigv` encodes all variants, alignments, and annotations into a single HTML page that you can
-to collaborators who don't have access to the cluster where your data is stored.
+`jigv` encodes all variants, alignments, and annotations into a single HTML page (or as separate javascript file for
+each variant) that you can to collaborators who don't have access to the cluster where your data is stored.
 
 The resulting file is very fast to navigate; the left/right arrow keys advance to next/previous variants of interest.
 
@@ -72,14 +72,16 @@ Options:
   --flank=FLANK              bases on either side of the variant or region to show (default: 100) (default: 100)
   -h, --help                 Show this help
 ```
+### template
+
+By default, jigv will embed all data for all sites into a single html file. This can scale up to about 2000 variants
+for a trio at which point the single file becomes quite large (~60MB).
+Using `--template`, it's possible to send each encoded site to a separate file. These can be loaded on demand from a
+server or sent to the user and loaded as a script on demand from the local file system.
+
 
 # limitations
 
-+ by default this embeds **all** of the data in the HTML page. `jigv` tries to reduce the alignment data
-  so that, for example 900 de novos variants with alignments for a trio generate an html file of
-  only about 30 megabytes.
-  **NOTE** that as of version 0.1.5, jigv has the `--template` option to allow each region to by written to
-  a separate data-file. Using these overcomes the problem of putting all of the data in one file.
 + if you have some custom javascript used with igv.js, that is generally useful, please open an issue so I can add it.
 + not all file types are supported
 + the sites file must contain only the variants to plot; there is no filtering in `jigv`
