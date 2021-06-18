@@ -407,16 +407,20 @@ proc write_site(s:string, site:string, tmpl:string, template_raw:bool) =
     var path = tmpl % ["site", site]
     createDir(splitFile(path).dir)
     var fh:File
-    doAssert fh.open(path, mode=fmWrite), "[jigv] error opening template file"
+    if tmpl == "stdout":
+      fh = stdout
+    else:
+      doAssert fh.open(path, mode=fmWrite), "[jigv] error opening template file"
     if not template_raw:
       fh.write("jigv_data = \"")
       fh.write(s)
-      fh.write("\"")
+      fh.write_line("\"")
     else:
       let prefix = "data:application/gzip;base64,"
       doAssert s.startsWith(prefix)
-      fh.write(s[prefix.len .. s.high])
-    fh.close()
+      fh.write_line(s[prefix.len .. s.high])
+    if tmpl != "stdout":
+      fh.close()
 
 proc main*(args:seq[string]=commandLineParams()) =
 
