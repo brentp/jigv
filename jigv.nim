@@ -557,7 +557,6 @@ proc main*(args:seq[string]=commandLineParams()) =
       ivcf.close()
       ivcf2.close()
     var meta_options = %* {
-      "showChromosomeWidget": false,
       "search": true,
       #"sessionURL": % encode($(options)),
       "showCursorTrackingGuide": true,
@@ -567,8 +566,9 @@ proc main*(args:seq[string]=commandLineParams()) =
     meta_options["sessions"] = %* sessions
     meta_options["loc2idx"] = %* loc2idx
 
-    var index_html = get_html().replace("<OPTIONS>", pretty(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
-    echo index_html
+    if opts.`template` == "":
+      var index_html = get_html().replace("<OPTIONS>", pretty(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
+      echo index_html
 
   except UsageError as e:
     stderr.write_line(p.help)
