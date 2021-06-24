@@ -1,3 +1,7 @@
+v0.1.7
+======
++ breaking: change `--template` to `--prefix`
+
 v0.1.5
 ======
 + add `--template` option to allow for each variant or site to be written to a separte js (or base64) file.

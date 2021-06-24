@@ -52,7 +52,6 @@ This can be scripted with your favorite language for a set of regions.
 # options
 
 ```
-Usage:
   jigv [options] [xams ...]
 
 Arguments:
@@ -66,20 +65,19 @@ Options:
   --cytoband=CYTOBAND        optional path to cytoband/ideogram file
   --annotation=ANNOTATION    path to additional bed or vcf file to be added as a track; may be specified multiple times
   --ped=PED                  pedigree file used to find relations for --sample
-  --template=TEMPLATE        if specified, encoded data for each region is written to it's own js file and no html is generated. this is a file template like: 'jigv_encoded/HG002/${site}.js' where and `site` must be in the template to be filled by jigv
-  --template-raw             by default if --template is specified, then the data is written to a javascript variable and includes the data: prefix. if this option is specified (along with --template), then the raw base64 encoded data is written to the file.
+  --prefix=PREFIX            if specified, encoded data for each region is written to it's own js file and no html is generated. this is a path prefix like: 'jigv_encoded/HG002/' where  where and `$site.js` will be added by jigv
+  --prefix-raw               by default if --prefix is specified, the data is written to a javascript variable and includes the 'data:base64' prefix. if this option is also specified, then the raw base64 encoded data is written to the file.
   --fasta=FASTA              path to indexed fasta file; required for cram files
   --flank=FLANK              bases on either side of the variant or region to show (default: 100) (default: 100)
-  -h, --help                 Show this help
 ```
-### template
+### prefix
 
 By default, jigv will embed all data for all sites into a single html file. This can scale up to about 2000 variants
 for a trio at which point the single file becomes quite large (~60MB).
-Using `--template`, it's possible to send each encoded site to a separate file. These can be loaded on demand from a
+Using `--prefix`, it's possible to send each encoded site to a separate file. These can be loaded on demand from a
 server or sent to the user and loaded as a script on demand from the local file system.
 
-Files written with `--template` but without `--template-raw' can be loaded from the local file-sytem of the user (or from a server depending on if they are viewing as `file:///...` on their local system or on a server. The code for that looks like this:
+Files written with `--prefix` but without `--prefix-raw' can be loaded from the local file-sytem of the user (or from a server depending on if they are viewing as `file:///...` on their local system or on a server. The code for that looks like this:
 
 ```Javascript
 

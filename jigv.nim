@@ -403,23 +403,23 @@ proc first_affected_or_zero*(samples:seq[Sample]): int =
   if samples.len == 0: raise newException(IndexError, "[tiwih] no samples given")
   return 0
 
-proc write_site(s:string, site:string, tmpl:string, template_raw:bool) =
-    var path = tmpl % ["site", site]
+proc write_site(s:string, site:string, prefix:string, prefix_raw:bool) =
+    var path = &"{prefix}{site}.js"
     createDir(splitFile(path).dir)
     var fh:File
-    if tmpl == "stdout":
+    if prefix == "stdout":
       fh = stdout
     else:
-      doAssert fh.open(path, mode=fmWrite), "[jigv] error opening template file"
-    if not template_raw:
+      doAssert fh.open(path, mode=fmWrite), &"[jigv] error opening file: {path}"
+    if not prefix_raw:
       fh.write("jigv_data = \"")
       fh.write(s)
       fh.write_line("\"")
     else:
-      let prefix = "data:application/gzip;base64,"
-      doAssert s.startsWith(prefix)
-      fh.write_line(s[prefix.len .. s.high])
-    if tmpl != "stdout":
+      let dprefix = "data:application/gzip;base64,"
+      doAssert s.startsWith(dprefix)
+      fh.write_line(s[dprefix.len .. s.high])
+    if prefix != "stdout":
       fh.close()
 
 proc main*(args:seq[string]=commandLineParams()) =
@@ -432,8 +432,8 @@ proc main*(args:seq[string]=commandLineParams()) =
     option("--cytoband", help="optional path to cytoband/ideogram file")
     option("--annotation", help="path to additional bed or vcf file to be added as a track; may be specified multiple times", multiple=true)
     option("--ped", help="pedigree file used to find relations for --sample")
-    option("--template", help="if specified, encoded data for each region is written to it's own js file and no html is generated. this is a file template like: 'jigv_encoded/HG002/${site}.js' where and `site` must be in the template to be filled by jigv", default="")
-    flag("--template-raw", help="by default if --template is specified, then the data is written to a javascript variable and includes the data: prefix. if this option is specified (along with --template), then the raw base64 encoded data is written to the file.")
+    option("--prefix", help="if specified, encoded data for each region is written to it's own js file and no html is generated. this is a path prefix like: 'jigv_encoded/HG002/' where  where and `$site.js` will be added by jigv", default="")
+    flag("--prefix-raw", help="by default if --prefix is specified, the data is written to a javascript variable and includes the 'data:base64' prefix. if this option is also specified, then the raw base64 encoded data is written to the file.")
     option("--fasta", help="path to indexed fasta file; required for cram files")
     option("--flank", default="100", help="bases on either side of the variant or region to show (default: 100)")
     arg("xams", nargs= -1, help="indexed bam or cram files for relevant samples. read-groups must match samples in vcf.")
@@ -522,9 +522,9 @@ proc main*(args:seq[string]=commandLineParams()) =
           tracks["genome"] = % opts.genome_build
 
         var s = ($tracks).encode
-        if opts.`template` != "":
+        if opts.prefix != "":
             var site = &"""{v.CHROM}-{v.start+1}-{v.REF}-{join(v.ALT, ",")}"""
-            write_site(s, site, opts.`template`, opts.template_raw)
+            write_site(s, site, opts.prefix, opts.prefix_raw)
             continue
 
 
@@ -545,16 +545,16 @@ proc main*(args:seq[string]=commandLineParams()) =
           tracks["genome"] = % opts.genome_build
 
         var s = ($tracks).encode
-        if opts.`template` != "":
+        if opts.prefix != "":
             var site = locus.replace(':', '-')
-            write_site(s, site, opts.`template`, opts.template_raw)
+            write_site(s, site, opts.prefix, opts.prefix_raw)
             continue
 
 
         loc2idx[($(tracks["locus"].str)).replace(",", "")] = loc2idx.len
         sessions.add(s)
 
-    if opts.`template` == "":
+    if opts.prefix == "":
       stderr.write_line &"[jigv] writing {sessions.len} regions to html"
 
     if ivcf != nil:
@@ -570,7 +570,7 @@ proc main*(args:seq[string]=commandLineParams()) =
     meta_options["sessions"] = %* sessions
     meta_options["loc2idx"] = %* loc2idx
 
-    if opts.`template` == "":
+    if opts.prefix == "":
       var index_html = get_html().replace("<OPTIONS>", pretty(meta_options)).replace("<JIGV_CUSTOM_JS>", "")
       echo index_html
 
