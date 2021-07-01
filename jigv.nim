@@ -221,6 +221,10 @@ proc encode*(path:string, region:string, typ:TrackFileType): string =
     var start = parseInt(chromstuff[1].split('-')[0])
     var stop = parseInt(chromstuff[1].split('-')[1])
     var clines:seq[string]
+    for l in path.hts_lines:
+      if l[0] != '#': break
+      clines.add(l)
+
     # linear search...
     if chromstuff[0] notin bgz.csi.chroms:
       if not chromstuff[0].startswith("chr"):
