@@ -457,6 +457,8 @@ proc main*(args:seq[string]=commandLineParams()) =
     if opts.genome_build != "" and opts.cytoband != "":
       stderr.write_line "[jigv] warning: when -g/--genome-build is specified the cytoband argument is not used"
       opts.cytoband = ""
+    if opts.genome_build == "" and opts.fasta == "":
+      stderr.write_line "[jigv] warning: specify a genome with -g/--genome-build (e.g. hg38, mm10, etc)"
 
     var bams: OrderedTableRef[string, Bam] = newOrderedTable[string, Bam]()
     for xam in opts.xams:

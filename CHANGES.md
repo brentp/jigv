@@ -1,6 +1,8 @@
 v0.1.9 (dev)
 ======
 + handle empty lines in --sites file
++ bump igv.js to 2.12.2
++ warn when no genome or fasta is specified
 
 v0.1.8
 ======
