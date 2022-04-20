@@ -1,3 +1,7 @@
+v0.1.9 (dev)
+======
++ handle empty lines in --sites file
+
 v0.1.8
 ======
 + always output header for --annotation files (fixes VCF)

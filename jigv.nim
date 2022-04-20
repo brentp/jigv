@@ -395,7 +395,7 @@ iterator generate_sites(path_or_region:string): string =
     yield path_or_region
   else:
     for l in path_or_region.hts_lines:
-      if l[0] == '#': continue
+      if len(l.strip()) == 0 or l[0] == '#': continue
       var toks = l.split("\t")
       if toks.len < 3:
         stderr.write_line &"[jigv] WARNING line: {l} not recogized as bed line. skipping"
