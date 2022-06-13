@@ -3,7 +3,7 @@ It requires that the files are hosted on a server with access to the original da
 javascript.
 
 `jigv` encodes all variants, alignments, and annotations into a single HTML page (or as separate javascript file for
-each variant) that you can to collaborators who don't have access to the cluster where your data is stored.
+each variant) that you can send to collaborators who don't have access to the cluster where your data is stored.
 
 The resulting file is very fast to navigate; the left/right arrow keys advance to next/previous variants of interest.
 
