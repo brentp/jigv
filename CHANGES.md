@@ -3,6 +3,7 @@ v0.1.9 (dev)
 + handle empty lines in --sites file
 + bump igv.js to 2.12.2
 + warn when no genome or fasta is specified
++ better for BED, e.g. show a bar for each bed region
 
 v0.1.8
 ======
