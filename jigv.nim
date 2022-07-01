@@ -286,6 +286,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
   # TODO: handle slivar fields e.g. show that the variant is de novo or
+  # TODO: encode single_locus or variant as a track.
   # compound-het
   # https://igv.org/web/release/2.8.4/examples/multi-locus.html
   # small locus is for the initial view.
@@ -293,7 +294,10 @@ proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta
   if variant == nil:
     doAssert single_locus != "", "[jigv] expected single_locus to be specified since no variant was given"
     small_locus = single_locus
-    locus = single_locus
+    var chrom_se = single_locus.split(':')
+    var start_stop = chrom_se[1].split('-')
+    doAssert len(start_stop) == 2, &"[jigv] got unexpected region: {single_locus}"
+    locus = &"{chrom_se[0]}:{max(1, parseInt(start_stop[0]) - flank)}-{parseInt(start_stop[1]) + flank}"
   else:
     small_locus = &"{variant.CHROM}:{max(1, variant.start - 20)}-{variant.stop + 20}"
     # locus how much data we pull (and how far user can zoom out).
@@ -546,7 +550,7 @@ proc main*(args:seq[string]=commandLineParams()) =
       var v:Variant
 
       for locus in generate_sites(opts.sites):
-        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=locus)
+        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=locus, flank=flank)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
 
