@@ -12,7 +12,6 @@ import tables
 import sets
 import random
 import strutils
-import pedfile
 import strformat
 import ./track
 import argparse
@@ -133,6 +132,14 @@ proc encode*(ivcf:VCF, region:string): string =
 
 proc encode*(s:string): string =
   return prefix & base64.encode(compress(s))
+
+proc encode_locus*(locus: string): string =
+  let chrom = stripChr(locus.split(":")[0])
+  let start = parseInt(locus.split(":")[1].split("-")[0])
+  let stop =  parseInt(locus.split(":")[1].split("-")[1])
+  var tmp = &"{chrom}\t{start-1}\t{stop}\n"
+  return prefix & base64.encode(compress(tmp))
+
 
 proc expand(region:string, dist:int): string =
   if dist == 0: return region
@@ -265,7 +272,7 @@ proc getAB(v:Variant): seq[float32] =
     for i in 0..<v.n_samples:
       try:
         result[i] = ad[2*i+1].float32 / max(1, ad[2*i+1] + ad[2*i]).float32
-      except OverflowError:
+      except OverflowDefect:
         stderr.write_line &"[jigv] AB set to zero for AD: [{ad[2*i]}, {ad[2*i+1]}"
 
   for ab in result.mitems:
@@ -290,15 +297,18 @@ proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta
   # compound-het
   # https://igv.org/web/release/2.8.4/examples/multi-locus.html
   # small locus is for the initial view.
-  var small_locus, locus: string
+  var small_locus: string
+  var locus: string
+  var single_locus = single_locus
   if variant == nil:
     doAssert single_locus != "", "[jigv] expected single_locus to be specified since no variant was given"
-    small_locus = single_locus
     var chrom_se = single_locus.split(':')
     var start_stop = chrom_se[1].split('-')
     doAssert len(start_stop) == 2, &"[jigv] got unexpected region: {single_locus}"
     locus = &"{chrom_se[0]}:{max(1, parseInt(start_stop[0]) - flank)}-{parseInt(start_stop[1]) + flank}"
+    small_locus = &"{chrom_se[0]}:{max(1, parseInt(start_stop[0]) - 20)}-{parseInt(start_stop[1]) + 20}"
   else:
+    single_locus = &"{variant.CHROM}:{variant.start+1}-{variant.stop}"
     small_locus = &"{variant.CHROM}:{max(1, variant.start - 20)}-{variant.stop + 20}"
     # locus how much data we pull (and how far user can zoom out).
     locus = &"{variant.CHROM}:{max(1, variant.start - flank)}-{variant.stop + flank}"
@@ -336,6 +346,11 @@ proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta
     GTs = variant.format.genotypes(x)
     discard variant.format.get("GQ", GQs)
     ABs = variant.getAB()
+  else:
+    var tr = Track(name: &"{single_locus}", path: single_locus.encode_locus(), file_type:FileType.BED, region:locus, n_tracks:n_tracks)
+    tracks.add(tr)
+    #discard
+
 
   for sample in samples:
     if sample.id notin bams: continue
@@ -408,7 +423,7 @@ iterator generate_sites(path_or_region:string): string =
 proc first_affected_or_zero*(samples:seq[Sample]): int =
   for i, s in samples:
     if s.affected: return i
-  if samples.len == 0: raise newException(IndexError, "[tiwih] no samples given")
+  if samples.len == 0: raise newException(IndexDefect, "[tiwih] no samples given")
   return 0
 
 proc write_site(s:string, site:string, prefix:string, prefix_raw:bool) =
