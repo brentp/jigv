@@ -1,4 +1,8 @@
-v0.1.9 (dev)
+v0.1.10
+=======
++ bump igv.js (#21)
+
+v0.1.9
 ======
 + handle empty lines in --sites file
 + bump igv.js to 2.12.2
