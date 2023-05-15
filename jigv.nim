@@ -32,7 +32,7 @@ proc check_chrom(targets: seq[Target|Contig], chrom:string): string =
       return t.name
   raise newException(KeyError, &"[jigv] error chromosome: {chrom} not found in bam")
 
-proc encode*(ibam:Bam, region:string, hitid:int=int.high, drop_tags:seq[string]= @["RG", "PG", "MD", "XS" ,"AS"]): string =
+proc encode*(ibam:Bam, region:string, hitid:int=int.high, max_depth:int32=int32.high, drop_tags:seq[string]= @["RG", "PG", "MD", "XS" ,"AS"]): string =
 
   var obam:Bam
   var path = os.getTempDir() & "/" &  $(rand(int.high)) & ".bam"
@@ -75,10 +75,13 @@ proc encode*(ibam:Bam, region:string, hitid:int=int.high, drop_tags:seq[string]=
   var region = &"{chrom}:{chromse[1]}"
   var highest_tid = 0
 
+  var n_aln = 0
   if hitid == int.high:
     for aln in ibam.query(region):
       highest_tid = max(aln.mate_tid, max(aln.tid, highest_tid))
       obam.write(aln)
+      n_aln.inc
+      if n_aln >= max_depth: break
   else:
     highest_tid = hitid
     for aln in ibam:
@@ -94,7 +97,7 @@ proc encode*(ibam:Bam, region:string, hitid:int=int.high, drop_tags:seq[string]=
     var ibam2:Bam
     if not ibam2.open(path):
         quit "could not open input tmp bam"
-    return ibam2.encode(region, highest_tid, drop_tags)
+    return ibam2.encode(region, highest_tid, max_depth=max_depth, drop_tags)
 
   result = prefix & base64.encode(path.readFile)
 
@@ -289,7 +292,7 @@ proc ff(f:float32): string {.inline.} =
 
 proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta:Fai, samples:seq[pedfile.Sample],
              cytoband:string="",
-             anno_files:seq[string], note:string="", max_samples:int=5, flank:int=100, single_locus:string=""): JsonNode =
+             anno_files:seq[string], note:string="", max_bam_depth:int32=int32.high, max_samples:int=5, flank:int=100, single_locus:string=""): JsonNode =
   # single_locus is used when we don't want to specify a vcf
   # TODO: if region is too large, try multi-locus:
   # TODO: handle slivar fields e.g. show that the variant is de novo or
@@ -367,7 +370,7 @@ proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta
     if ABs.len > 0:
       name &= &" AB:<b>{ff(ABs[sample.i])}</b>"
 
-    var tr = Track(name:name, path: ibam.encode(locus), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
+    var tr = Track(name:name, path: ibam.encode(locus, max_depth=max_bam_depth), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
     tracks.add(tr)
 
   for a in anno_files:
@@ -453,6 +456,7 @@ proc main*(args:seq[string]=commandLineParams()) =
     # TODO: option("--js", help="custom javascript to load")
     option("-g", "--genome-build", help="genome build (e.g. hg19, mm10, dm6, etc, from https://s3.amazonaws.com/igv.org.genomes/genomes.json).  If this is specified then the page will request fasta, ideogram and gene data from a server.")
     option("--cytoband", help="optional path to cytoband/ideogram file")
+    option("--max-bam-reads", default="1000000", help="write at most this many reads to the file")
     option("--annotation", help="path to additional bed or vcf file to be added as a track; may be specified multiple times", multiple=true)
     option("--ped", help="pedigree file used to find relations for --sample")
     option("--prefix", help="if specified, encoded data for each region is written to it's own js file and no html is generated. this is a path prefix like: 'jigv_encoded/HG002/' where  where and `$site.js` will be added by jigv", default="")
@@ -480,6 +484,7 @@ proc main*(args:seq[string]=commandLineParams()) =
       stderr.write_line "[jigv] warning: specify a genome with -g/--genome-build (e.g. hg38, mm10, etc)"
 
     var bams: OrderedTableRef[string, Bam] = newOrderedTable[string, Bam]()
+    var max_bam_depth = parseInt(opts.max_bam_reads).int32
     for xam in opts.xams:
       var ibam:Bam
       if not ibam.open(xam, fai=opts.fasta, index=true):
@@ -542,9 +547,10 @@ proc main*(args:seq[string]=commandLineParams()) =
     if ivcf != nil:
       var n = 0
       for v in ivcf:
-        var tracks = v.encode(ivcf2, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, flank=flank)
+        var tracks = v.encode(ivcf2, bams, fa, samples, anno_files=ifiles, max_bam_depth=max_bam_depth, cytoband=opts.cytoband, flank=flank)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
+
 
         var s = ($tracks).encode
         if opts.prefix != "":
@@ -565,7 +571,7 @@ proc main*(args:seq[string]=commandLineParams()) =
       var v:Variant
 
       for locus in generate_sites(opts.sites):
-        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, cytoband=opts.cytoband, single_locus=locus, flank=flank)
+        var tracks = v.encode(ivcf, bams, fa, samples, anno_files=ifiles, max_bam_depth=max_bam_depth, cytoband=opts.cytoband, single_locus=locus, flank=flank)
         if opts.genome_build != "":
           tracks["genome"] = % opts.genome_build
 
