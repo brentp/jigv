@@ -15,6 +15,7 @@ import strutils
 import strformat
 import ./track
 import argparse
+import sequtils
 
 randomize()
 
@@ -355,9 +356,11 @@ proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta
     #discard
 
 
+  var any_found = false
   for sample in samples:
     if sample.id notin bams: continue
     var ibam = bams[sample.id]
+    any_found = true
     var name: string
     try:
         name = sample["label"]
@@ -372,6 +375,9 @@ proc encode*(variant:Variant, ivcf:VCF, bams:OrderedTableRef[string, Bam], fasta
 
     var tr = Track(name:name, path: ibam.encode(locus, max_depth=max_bam_depth), n_tracks:n_tracks, file_type:FileType.BAM, region:locus)
     tracks.add(tr)
+
+  if not any_found and bams.len > 0:
+      stderr.write_line &"[jigv] WARNING no shared samples between: {samples.mapIt(it.id)} and bam samples {toSeq(bams.keys)}"
 
   for a in anno_files:
     let ft = if a.endswith(".vcf") or a.endswith(".vcf.gz") or a.endswith(".bcf"): FileType.VCF else: FileType.BED
