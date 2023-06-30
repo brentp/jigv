@@ -262,6 +262,7 @@ proc get_display_name(v:Variant): string =
   result = &"{v.CHROM}:{v.start + 1}({r}/{alts.join(\",\")})"
 
 proc is_del(v:Variant): bool {.inline.} =
+  if v.ALT.len < 1: return false
   if v.ALT[0][0] == '<':
     return v.ALT[0].startswith("<DEL")
   return v.REF.len > v.ALT[0].len
