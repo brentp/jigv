@@ -3,6 +3,7 @@ author        = "Brent Pedersen"
 description   = "igv.js static files"
 license       = "MIT"
 
+bin = @["jigv"]
 
 # Dependencies
 

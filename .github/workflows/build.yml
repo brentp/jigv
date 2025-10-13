@@ -116,21 +116,21 @@ jobs:
     - name: Build (64-bit Unix/Windows)
       if: matrix.cpu == 'amd64'
       run: |
-        nimble build -y -d:release --verbose
+        nimble build -y -d:release
       shell: bash
 
     - name: Build (32-bit Linux)
       if: matrix.cpu == 'i386' && runner.os == 'Linux'
       run: |
         # Build with 32-bit flags
-        nim c -d:release --cpu:i386 --passC:-m32 --passL:-m32 --verbose jigv.nim
+        nim c -d:release --cpu:i386 --passC:-m32 --passL:-m32 jigv.nim
       shell: bash
 
     - name: Build (ARM64 macOS)
       if: matrix.cpu == 'arm64' && runner.os == 'macOS'
       run: |
         # Cross-compile for ARM64
-        nim c -d:release --os:macosx --cpu:arm64 --passC:"-target arm64-apple-macos11" --passL:"-target arm64-apple-macos11" --verbose jigv.nim
+        nim c -d:release --os:macosx --cpu:arm64 --passC:"-target arm64-apple-macos11" --passL:"-target arm64-apple-macos11" jigv.nim
       shell: bash
 
     - name: Prepare artifact (Unix)
