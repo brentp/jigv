@@ -18,30 +18,30 @@ jobs:
       matrix:
         include:
           # Linux builds
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             cpu: amd64
             nim_arch: linux_x64
             artifact_name: jigv-linux-x86_64
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             cpu: i386
             nim_arch: linux_x32
             artifact_name: jigv-linux-i386
           
           # macOS builds
-          - os: macos-11
+          - os: macos-13
             cpu: amd64
             nim_arch: macosx_x64
             artifact_name: jigv-macos-x86_64
           # Note: i386 (32-bit) macOS is no longer supported by Apple since macOS 10.15 Catalina
           # Modern Nim and dependencies may not compile for i386 macOS
           # However, we'll include arm64 for Apple Silicon
-          - os: macos-11
+          - os: macos-13
             cpu: arm64
             nim_arch: macosx_arm64
             artifact_name: jigv-macos-arm64
           
           # Windows builds
-          - os: windows-2019
+          - os: windows-2022
             cpu: amd64
             nim_arch: windows_x64
             artifact_name: jigv-windows-x86_64.exe
