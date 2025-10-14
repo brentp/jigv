@@ -28,7 +28,12 @@ See [Examples](#Examples) for more
 
 # installation
 
-grab a static linux binary from [releases](https://github.com/brentp/jigv/releases/latest)
+Grab pre-built binaries from [releases](https://github.com/brentp/jigv/releases/latest) for:
+- Linux (x86_64 and i386)
+- macOS (Intel x86_64 and Apple Silicon ARM64)
+- Windows (x86_64)
+
+For building from source, see [BUILD.md](BUILD.md)
 
 # notes and features
 

@@ -1,0 +1,182 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }} - ${{ matrix.cpu }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds
+          - os: ubuntu-22.04
+            cpu: amd64
+            nim_arch: linux_x64
+            artifact_name: jigv-linux-x86_64
+          - os: ubuntu-22.04
+            cpu: i386
+            nim_arch: linux_x32
+            artifact_name: jigv-linux-i386
+          
+          # macOS builds
+          - os: macos-13
+            cpu: amd64
+            nim_arch: macosx_x64
+            artifact_name: jigv-macos-x86_64
+          # Note: i386 (32-bit) macOS is no longer supported by Apple since macOS 10.15 Catalina
+          # Modern Nim and dependencies may not compile for i386 macOS
+          # However, we'll include arm64 for Apple Silicon
+          - os: macos-13
+            cpu: arm64
+            nim_arch: macosx_arm64
+            artifact_name: jigv-macos-arm64
+          
+          # Windows builds
+          - os: windows-2022
+            cpu: amd64
+            nim_arch: windows_x64
+            artifact_name: jigv-windows-x86_64.exe
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Cache Nim
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.nimble
+          ~/.choosenim
+        key: ${{ matrix.os }}-${{ matrix.cpu }}-nim-${{ hashFiles('*.nimble') }}
+        restore-keys: |
+          ${{ matrix.os }}-${{ matrix.cpu }}-nim-
+
+    - name: Install Nim (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        curl https://nim-lang.org/choosenim/init.sh -sSf | sh -s -- -y
+        echo "$HOME/.nimble/bin" >> $GITHUB_PATH
+      shell: bash
+
+    - name: Install Nim (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        curl -O https://nim-lang.org/download/nim-1.6.14_x64.zip
+        unzip nim-1.6.14_x64.zip
+        echo "$PWD/nim-1.6.14/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      shell: pwsh
+
+    - name: Setup i386 environment (Linux)
+      if: matrix.cpu == 'i386' && runner.os == 'Linux'
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get update -q
+        sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386
+        # Install 32-bit libraries needed for htslib
+        sudo apt-get install -y zlib1g-dev:i386 libbz2-dev:i386 liblzma-dev:i386 libcurl4-openssl-dev:i386
+
+    - name: Install build dependencies (Linux)
+      if: runner.os == 'Linux' && matrix.cpu != 'i386'
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y libcurl4-openssl-dev libbz2-dev liblzma-dev zlib1g-dev
+
+    - name: Install build dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install curl-openssl xz bzip2 zlib
+
+    - name: Setup cross-compilation for ARM64 (macOS)
+      if: matrix.cpu == 'arm64' && runner.os == 'macOS'
+      run: |
+        echo "Building for ARM64 on x86_64 host"
+        # Set cross-compilation flags for ARM64
+        echo "CFLAGS=-target arm64-apple-macos11" >> $GITHUB_ENV
+        echo "LDFLAGS=-target arm64-apple-macos11" >> $GITHUB_ENV
+
+    - name: Verify Nim installation
+      run: |
+        nim --version
+        nimble --version
+      shell: bash
+
+    - name: Install Nim dependencies
+      run: nimble install -y --verbose
+      shell: bash
+
+    - name: Build (64-bit Unix/Windows)
+      if: matrix.cpu == 'amd64'
+      run: |
+        nimble build -y -d:release
+      shell: bash
+
+    - name: Build (32-bit Linux)
+      if: matrix.cpu == 'i386' && runner.os == 'Linux'
+      run: |
+        # Build with 32-bit flags
+        nim c -d:release --cpu:i386 --passC:-m32 --passL:-m32 jigv.nim
+      shell: bash
+
+    - name: Build (ARM64 macOS)
+      if: matrix.cpu == 'arm64' && runner.os == 'macOS'
+      run: |
+        # Cross-compile for ARM64
+        nim c -d:release --os:macosx --cpu:arm64 --passC:"-target arm64-apple-macos11" --passL:"-target arm64-apple-macos11" jigv.nim
+      shell: bash
+
+    - name: Prepare artifact (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        cp jigv ${{ matrix.artifact_name }}
+        chmod +x ${{ matrix.artifact_name }}
+        file ${{ matrix.artifact_name }}
+      shell: bash
+
+    - name: Prepare artifact (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        copy jigv.exe ${{ matrix.artifact_name }}
+      shell: cmd
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.artifact_name }}
+        retention-days: 7
+
+  create-release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Display structure of downloaded files
+      run: ls -R artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/*/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
