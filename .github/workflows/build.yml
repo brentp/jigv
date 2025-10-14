@@ -2,11 +2,11 @@ name: Build
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, dev, main ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ master ]
+    branches: [ master, dev, main ]
   workflow_dispatch:
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
           # Note: i386 (32-bit) macOS is no longer supported by Apple since macOS 10.15 Catalina
           # Modern Nim and dependencies may not compile for i386 macOS
           # However, we'll include arm64 for Apple Silicon
-          - os: macos-13
+          - os: macos-14
             cpu: arm64
             nim_arch: macosx_arm64
             artifact_name: jigv-macos-arm64
@@ -93,15 +93,19 @@ jobs:
     - name: Install build dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install curl-openssl xz bzip2 zlib
+        brew install curl-openssl xz bzip2 zlib zig
+      shell: bash
 
-    - name: Setup cross-compilation for ARM64 (macOS)
-      if: matrix.cpu == 'arm64' && runner.os == 'macOS'
+    - name: Build static htslib (macOS)
+      if: runner.os == 'macOS'
       run: |
-        echo "Building for ARM64 on x86_64 host"
-        # Set cross-compilation flags for ARM64
-        echo "CFLAGS=-target arm64-apple-macos11" >> $GITHUB_ENV
-        echo "LDFLAGS=-target arm64-apple-macos11" >> $GITHUB_ENV
+        git clone https://github.com/samtools/htslib.git
+        cd htslib
+        autoreconf -i
+        ./configure CC="zig cc" --enable-static --disable-shared --with-libdeflate=no --without-libdeflate
+        make
+        sudo make install
+      shell: bash
 
     - name: Verify Nim installation
       run: |
@@ -112,12 +116,24 @@ jobs:
     - name: Install Nim dependencies
       run: nimble install -y --verbose
       shell: bash
+      env:
+        CC: ${{ runner.os == 'macOS' && 'zig cc' || '' }}
+        HTS_LIB: ${{ runner.os == 'macOS' && '/usr/local/lib' || '' }}
+        HTS_INCLUDE: ${{ runner.os == 'macOS' && '/usr/local/include' || '' }}
 
     - name: Build (64-bit Unix/Windows)
-      if: matrix.cpu == 'amd64'
+      if: matrix.cpu == 'amd64' && runner.os != 'macOS'
       run: |
         nimble build -y -d:release
       shell: bash
+
+    - name: Build (macOS amd64)
+      if: matrix.cpu == 'amd64' && runner.os == 'macOS'
+      run: |
+        nimble build -y -d:release -d:static --passL:-static
+      shell: bash
+      env:
+        CC: zig cc
 
     - name: Build (32-bit Linux)
       if: matrix.cpu == 'i386' && runner.os == 'Linux'
@@ -129,9 +145,10 @@ jobs:
     - name: Build (ARM64 macOS)
       if: matrix.cpu == 'arm64' && runner.os == 'macOS'
       run: |
-        # Cross-compile for ARM64
-        nim c -d:release --os:macosx --cpu:arm64 --passC:"-target arm64-apple-macos11" --passL:"-target arm64-apple-macos11" jigv.nim
+        nimble build -y -d:release -d:static --passL:-static
       shell: bash
+      env:
+        CC: zig cc
 
     - name: Prepare artifact (Unix)
       if: runner.os != 'Windows'
@@ -139,6 +156,12 @@ jobs:
         cp jigv ${{ matrix.artifact_name }}
         chmod +x ${{ matrix.artifact_name }}
         file ${{ matrix.artifact_name }}
+      shell: bash
+
+    - name: Check dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        otool -L ${{ matrix.artifact_name }}
       shell: bash
 
     - name: Prepare artifact (Windows)
