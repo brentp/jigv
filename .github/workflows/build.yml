@@ -93,7 +93,7 @@ jobs:
     - name: Install build dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install curl-openssl xz bzip2 zlib autoconf automake libtool
+        brew install curl-openssl xz bzip2 zlib autoconf automake libtool zig
       shell: bash
 
     - name: Build static htslib (macOS)
@@ -129,8 +129,10 @@ jobs:
     - name: Build (macOS amd64)
       if: matrix.cpu == 'amd64' && runner.os == 'macOS'
       run: |
-        nimble build -y -d:release -d:static --passL:-static
+        nimble build -y -d:release -d:static
       shell: bash
+      env:
+        CC: zig cc -target x86_64-macos
 
     - name: Build (32-bit Linux)
       if: matrix.cpu == 'i386' && runner.os == 'Linux'
@@ -142,8 +144,10 @@ jobs:
     - name: Build (ARM64 macOS)
       if: matrix.cpu == 'arm64' && runner.os == 'macOS'
       run: |
-        nimble build -y -d:release -d:static --passL:-static
+        nimble build -y -d:release -d:static
       shell: bash
+      env:
+        CC: zig cc -target aarch64-macos
 
     - name: Prepare artifact (Unix)
       if: runner.os != 'Windows'
