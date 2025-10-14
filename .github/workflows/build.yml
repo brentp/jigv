@@ -102,7 +102,7 @@ jobs:
         git clone --recursive https://github.com/samtools/htslib.git
         cd htslib
         autoreconf -i
-        ./configure CC="zig cc" --enable-static --disable-shared --with-libdeflate=no --without-libdeflate
+        ./configure CC="clang" --enable-static --disable-shared --with-libdeflate=no --without-libdeflate
         make
         sudo make install
       shell: bash
